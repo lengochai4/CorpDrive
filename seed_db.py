@@ -48,8 +48,8 @@ CREATE TABLE activity_logs (
 
 # Tạo User 1 (Hải - Hacker/Tester) & User 2 (Ân - Trưởng phòng/Mục tiêu)
 users = [
-    (str(uuid.uuid4()), 'hai', 'hai123', 'Nguyễn Văn Hải', 'hai.nv@corpdrive.vn', '0901112233', '079099001122', 'Kỹ thuật Hệ thống', 'Chuyên viên IT', '18,000,000 VND', 'Nhân viên mới phòng IT', 'staff'),
-    (str(uuid.uuid4()), 'an', 'an123', 'Trần Minh Ân', 'an.tm@corpdrive.vn', '0988999888', '001085009988', 'Vận hành & Bảo mật', 'Trưởng phòng Vận hành', '55,000,000 VND', 'Mã PIN két sắt nội bộ: 8842 - Truy cập /network-check để kiểm tra server', 'manager')
+    (str(uuid.uuid4()), 'hai', 'hai123', 'Lê Ngọc Hải', 'hai.nv@corpdrive.vn', '0901112233', '079099001122', 'Kỹ thuật Hệ thống', 'Chuyên viên IT', '18,000,000 VND', 'Nhân viên mới phòng IT', 'staff'),
+    (str(uuid.uuid4()), 'an', 'an123', 'Trần Thiên Ân', 'an.tm@corpdrive.vn', '0988999888', '001085009988', 'Vận hành & Bảo mật', 'Trưởng phòng Vận hành', '55,000,000 VND', 'Mã PIN két sắt nội bộ: 8842 - Truy cập /network-check để kiểm tra server', 'manager')
 ]
 
 first_names = ['Minh', 'Lan', 'Tuấn', 'Hương', 'Dũng', 'Thảo', 'Hoàng', 'Linh', 'Nam', 'Trang', 'Phúc', 'Ngọc', 'Khang', 'Vy']
