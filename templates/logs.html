@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h4>Security Audit Log (Giám sát thời gian thực)</h4>
+<table class="table table-sm table-bordered bg-white mt-3">
+    <thead><tr><th>Thời gian</th><th>User</th><th>Hành động</th><th>Mục tiêu</th><th>Trạng thái</th><th>Chi tiết</th></tr></thead>
+    <tbody>
+    {% for l in logs %}
+        <tr class="{{ 'table-danger' if l.status == 'BLOCKED' else '' }}">
+            <td>{{ l.timestamp }}</td>
+            <td>{{ l.username }}</td>
+            <td><code>{{ l.action }}</code></td>
+            <td><code>{{ l.target }}</code></td>
+            <td><span class="badge {{ 'bg-danger' if l.status == 'BLOCKED' else 'bg-success' }}">{{ l.status }}</span></td>
+            <td>{{ l.note }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

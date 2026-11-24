@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-4 card p-4 shadow-sm">
+        <h4 class="mb-3 text-center">Đăng nhập CorpDrive</h4>
+        {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+        <form method="POST">
+            <input type="text" name="username" class="form-control mb-2" placeholder="Username (VD: hai)" required>
+            <input type="password" name="password" class="form-control mb-3" placeholder="Password (VD: hai123)" required>
+            <button class="btn btn-primary w-100">Đăng nhập</button>
+        </form>
+        <div class="mt-3 small text-muted">Tài khoản demo: <code>hai / hai123</code> (Staff) | <code>an / an123</code> (Manager)</div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>CorpDrive Portal</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark px-4">
+    <a class="navbar-brand fw-bold" href="/drive">CorpDrive Portal</a>
+    {% if session.user_id %}
+    <div class="navbar-nav me-auto">
+        <a class="nav-link" href="/drive">My Drive</a>
+        <a class="nav-link" href="/profile">Hồ sơ cá nhân</a>
+        <a class="nav-link" href="/network-check">Network Diagnostics</a>
+        <a class="nav-link" href="/logs">Security Audit Log</a>
+    </div>
+    <div class="d-flex align-items-center gap-3">
+        <form action="/toggle-mode" method="POST" class="m-0">
+            {% if session.mode == 'vulnerable' %}
+                <button class="btn btn-danger btn-sm fw-bold">⚠️ VULNERABLE MODE (Click để bật Secure)</button>
+            {% else %}
+                <button class="btn btn-success btn-sm fw-bold">🛡️ SECURE MODE (Click để về Vulnerable)</button>
+            {% endif %}
+        </form>
+        <span class="text-white small">Xin chào, <b>{{ session.full_name }}</b> (ID: {{ session.user_id }})</span>
+        <a href="/logout" class="btn btn-outline-light btn-sm">Thoát</a>
+    </div>
+    {% endif %}
+</nav>
+<div class="container py-4">{% block content %}{% endblock %}</div>
+</body>
+</html>

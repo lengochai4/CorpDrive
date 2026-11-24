@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h4>Tài liệu của tôi (My Drive)</h4>
+<table class="table table-bordered bg-white mt-3">
+    <thead><tr><th>ID</th><th>Tên tài liệu</th><th>Phân loại</th><th>Thao tác</th></tr></thead>
+    <tbody>
+    {% for d in docs %}
+        <tr>
+            <td>{{ d.id }}</td>
+            <td>{{ d.filename }}</td>
+            <td><span class="badge bg-secondary">{{ d.category }}</span></td>
+            <td>
+                {% if session.mode == 'vulnerable' %}
+                    <a href="/drive/download?file_id={{ d.id }}" class="btn btn-sm btn-primary">Tải xuống (ID={{ d.id }})</a>
+                {% else %}
+                    <a href="/drive/download?uuid={{ d.uuid }}" class="btn btn-sm btn-success">Tải xuống (UUID)</a>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

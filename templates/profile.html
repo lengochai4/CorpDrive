@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<h4>Hồ sơ nhân viên (API JSON IDOR Demo)</h4>
+
+<!-- Truyền user_id an toàn qua thuộc tính data-user-id -->
+<div id="profile-box" class="card p-4 mt-3" data-user-id="{{ session.get('user_id', 0) }}">
+    Đang tải dữ liệu từ <code>POST /api/profile</code>...
+</div>
+
+<script>
+const box = document.getElementById('profile-box');
+const currentUserId = parseInt(box.dataset.userId, 10);
+
+fetch('/api/profile', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: currentUserId})
+})
+.then(r => r.json())
+.then(d => {
+    if (d.error) {
+        box.innerHTML = `<div class="alert alert-danger">${d.error}</div>`;
+    } else {
+        box.innerHTML = `
+            <p><b>ID:</b> ${d.id} | <b>Họ tên:</b> ${d.full_name} (${d.position})</p>
+            <p><b>Email:</b> ${d.email} | <b>SĐT:</b> ${d.phone}</p>
+            <p><b>Số CCCD:</b> <span class="text-danger fw-bold">${d.citizen_id}</span></p>
+            <p><b>Mức lương:</b> <span class="text-danger fw-bold">${d.salary}</span></p>
+            <p><b>Ghi chú mật:</b> <span class="bg-warning px-2">${d.bio}</span></p>`;
+    }
+})
+.catch(err => {
+    box.innerHTML = `<div class="alert alert-danger">Lỗi kết nối API: ${err}</div>`;
+});
+</script>
+{% endblock %}
