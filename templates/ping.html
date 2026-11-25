@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h4>Network Diagnostics (Ping Tool)</h4>
-<div class="card p-4 mt-3">
+<div class="card p-4 mt-3" id="ping-container" data-mode="{{ session.get('mode', 'vulnerable') }}">
     <div class="input-group mb-3">
         <input type="text" id="host" class="form-control" value="127.0.0.1" placeholder="Nhập IP hoặc Hostname">
         <button class="btn btn-dark" onclick="runPing()">Ping Server</button>
@@ -11,11 +11,13 @@
 <script>
 function runPing() {
     const host = document.getElementById('host').value;
-    // Kiểm tra sơ sài phía Client (dễ dàng bypass bằng Burp Suite)
-    if (!/^[a-zA-Z0-9.-]+$/.test(host)) {
+    const mode = document.getElementById('ping-container').dataset.mode;
+
+    if (mode === 'secure' && !/^[a-zA-Z0-9.-]+$/.test(host)) {
         alert('Frontend Validation: Chỉ cho phép nhập chữ, số và dấu chấm!');
         return;
     }
+
     fetch('/api/ping', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
